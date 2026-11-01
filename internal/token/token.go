@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -133,9 +134,9 @@ func loadOrCreateKey(path string) (ed25519.PrivateKey, error) {
 	case fi.Mode().Perm()&0o077 != 0:
 		return nil, ErrInsecureKeyFile
 	}
-	raw, err := os.ReadFile(path) //nolint:gosec // path is operator config, perms checked above
+	raw, err := readSameFile(path, fi)
 	if err != nil {
-		return nil, fmt.Errorf("token: read key: %w", err)
+		return nil, err
 	}
 	block, _ := pem.Decode(raw)
 	if block == nil || block.Type != pemType {
@@ -168,12 +169,31 @@ func createKey(path string) (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("token: create key: %w", err)
 	}
-	if err := pem.Encode(f, &pem.Block{Type: pemType, Bytes: der}); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("token: write key: %w", err)
+	err = pem.Encode(f, &pem.Block{Type: pemType, Bytes: der})
+	if cerr := f.Close(); err == nil {
+		err = cerr
 	}
-	if err := f.Close(); err != nil {
+	if err != nil {
+		_ = os.Remove(path) // never leave a partial key that breaks every later start
 		return nil, fmt.Errorf("token: write key: %w", err)
 	}
 	return priv, nil
+}
+
+// readSameFile reads path and confirms (via fstat) it is still the file that
+// was Lstat-ed, closing the window for a symlink swap between check and read.
+func readSameFile(path string, want fs.FileInfo) ([]byte, error) {
+	f, err := os.Open(path) //nolint:gosec // operator-configured path, verified below
+	if err != nil {
+		return nil, fmt.Errorf("token: read key: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	got, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("token: read key: %w", err)
+	}
+	if !os.SameFile(want, got) {
+		return nil, fmt.Errorf("%w: key file changed while opening", ErrInvalidKey)
+	}
+	return io.ReadAll(f)
 }

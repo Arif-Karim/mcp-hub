@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"regexp"
 	"strings"
@@ -19,6 +18,9 @@ import (
 	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
 	"github.com/Arif-Karim/mcp-hub/internal/httpx"
 )
+
+// StatusClientClosed is audited when the client disconnects mid-request (nginx convention).
+const StatusClientClosed = 499
 
 // Defaults for Config.
 const (
@@ -85,7 +87,10 @@ func New(cfg Config) http.Handler {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackHost(r.Host) || !allowedOrigin(r.Header) {
+	// Upstream content must never be interpreted as a document on the hub's origin.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	if !httpx.IsLoopbackHost(r.Host) || !allowedOrigin(r.Header) {
 		slog.Warn("proxy rejected non-loopback request", "host", r.Host, "origin", r.Header.Get("Origin"))
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeBadRequest, "request must come from a loopback origin")
 		return
@@ -105,9 +110,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sw := &statusWriter{ResponseWriter: w}
 	method, tool := r.Method, ""
 	defer func() {
+		status := sw.code()
+		if sw.auditStatus != 0 {
+			status = sw.auditStatus
+		}
 		h.cfg.Audit.Record(audit.Event{
 			Time: start.UTC(), Server: id, Method: truncate(method), Tool: truncate(tool),
-			Status: sw.code(), DurationMs: time.Since(start).Milliseconds(), User: h.cfg.User,
+			Status: status, DurationMs: time.Since(start).Milliseconds(), User: h.cfg.User,
 		})
 	}()
 
@@ -132,51 +141,26 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(sw, http.StatusBadGateway, httpx.CodeInternal, "upstream URL is invalid")
 		return
 	}
-	authz, ok := h.authorization(id, up.Auth)
+	authz, ok := h.authorization(id, up.Auth, target)
 	if !ok {
 		httpx.WriteError(sw, http.StatusBadGateway, httpx.CodeInternal, "could not obtain upstream credentials")
 		return
 	}
-
-	rp := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			out := pr.Out
-			out.URL.Scheme, out.URL.Host = target.Scheme, target.Host
-			out.URL.Path, out.URL.RawPath = target.Path+rest, ""
-			out.Host = "" // send the upstream's own Host
-			out.Header = http.Header{}
-			for _, k := range forwardHeaders {
-				if v := pr.In.Header.Values(k); len(v) > 0 {
-					out.Header[k] = v
-				}
-			}
-			if authz != "" {
-				out.Header.Set("Authorization", authz)
-			}
-		},
-		ModifyResponse: func(resp *http.Response) error {
-			// The hub UI shares this origin; upstreams must not plant cookies on it.
-			resp.Header.Del("Set-Cookie")
-			return nil
-		},
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
-			slog.Warn("proxy upstream unreachable", "server", id, "err", err)
-			httpx.WriteError(w, http.StatusBadGateway, httpx.CodeStartFailed, "upstream MCP server unreachable")
-		},
-		FlushInterval: -1,
-		Transport:     h.cfg.Transport,
-		ErrorLog:      slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
-	}
-	rp.ServeHTTP(sw, r)
+	h.reverseProxy(id, target, rest, authz, sw).ServeHTTP(sw, r)
 }
 
 // authorization returns the Authorization header value for the upstream, or
-// ok=false if credentials are required but unavailable (fail closed).
-func (h *handler) authorization(id string, mode catalogue.AuthMode) (string, bool) {
+// ok=false if credentials are required but unavailable or would travel in
+// cleartext (fail closed).
+func (h *handler) authorization(id string, mode catalogue.AuthMode, target *url.URL) (string, bool) {
 	switch mode {
 	case catalogue.AuthNone:
 		return "", true
 	case catalogue.AuthHubJWT:
+		if target.Scheme != "https" && !httpx.IsLoopbackName(target.Hostname()) {
+			slog.Error("proxy refused to send hub token over plaintext http", "server", id)
+			return "", false
+		}
 		tok, err := h.cfg.Tokens.Issue(h.cfg.User, id, h.cfg.TokenTTL)
 		if err != nil {
 			slog.Error("proxy token issue failed", "server", id, "err", err)
@@ -201,7 +185,7 @@ func splitPath(p string) (id, rest string, ok bool) {
 		rest = "/" + rest
 	}
 	for _, seg := range strings.Split(rest, "/") {
-		if seg == ".." || seg == "." {
+		if seg == ".." || seg == "." || strings.Contains(seg, `\`) {
 			return "", "", false
 		}
 	}

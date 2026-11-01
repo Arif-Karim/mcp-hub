@@ -8,6 +8,9 @@ import "net/http"
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+	// auditStatus, when set, is recorded instead of the status sent to the
+	// client (upstream 401/403 mapped to 502, or 499 on client disconnect).
+	auditStatus int
 }
 
 func (s *statusWriter) WriteHeader(code int) {

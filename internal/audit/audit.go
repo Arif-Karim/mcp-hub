@@ -34,6 +34,8 @@ type Log struct {
 	ring []Event
 	next int // index of the slot the next event goes into
 	n    int // number of valid events in ring
+
+	writeErrors int64
 }
 
 // NewLog opens (appending) or creates the JSONL file at path with 0600 perms
@@ -70,8 +72,20 @@ func (l *Log) Record(e Event) {
 		l.n++
 	}
 	if _, err := l.f.Write(line); err != nil {
-		slog.Error("audit write", "err", err)
+		l.writeErrors++
+		// Log the first failure loudly, then every 100th, so a full disk can't flood logs.
+		if l.writeErrors%100 == 1 {
+			slog.Error("audit write failed; events kept in memory only", "err", err, "failures", l.writeErrors)
+		}
 	}
+}
+
+// WriteErrors is the number of events that could not be appended to the file.
+// Non-zero means the durable audit trail is incomplete (e.g. disk full).
+func (l *Log) WriteErrors() int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.writeErrors
 }
 
 // Recent returns up to limit events, newest first.

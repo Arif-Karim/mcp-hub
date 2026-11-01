@@ -47,7 +47,7 @@ func New(opts Options) http.Handler {
 	if opts.UI != nil {
 		mux.Handle("/", opts.UI)
 	}
-	return mux
+	return loopbackGuard(mux)
 }
 
 // methodNotAllowed answers the read-only routes; Allow is required by RFC 9110.
