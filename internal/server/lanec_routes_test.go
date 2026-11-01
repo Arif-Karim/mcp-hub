@@ -35,14 +35,14 @@ func TestProxyJWKSAndAuditRoutes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+		h.ServeHTTP(rec, localReq(tc.method, tc.path, nil))
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), tc.want) {
 			t.Errorf("%s %s: %d %q, want %q", tc.method, tc.path, rec.Code, rec.Body.String(), tc.want)
 		}
 	}
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/audit", nil))
+	h.ServeHTTP(rec, localReq(http.MethodPost, "/api/v1/audit", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST audit = %d, want 405", rec.Code)
 	}
@@ -52,7 +52,7 @@ func TestLaneCRoutesAbsentWhenNotConfigured(t *testing.T) {
 	h := server.New(server.Options{Version: "x"})
 	for _, p := range []string{"/mcp/svc-a", "/.well-known/jwks.json", "/api/v1/audit"} {
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
+		h.ServeHTTP(rec, localReq(http.MethodGet, p, nil))
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s: %d, want 404", p, rec.Code)
 		}
