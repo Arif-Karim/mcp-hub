@@ -1,0 +1,46 @@
+# Intentionally INVALID catalogue, for docs and demos. Every entry breaks a rule:
+#   MCP_HUB_CATALOGUE=sample-data/invalid-catalogue.yaml mcp-hub serve
+# refuses to start and lists all problems at once.
+version: 1
+entries:
+  - id: Bad_ID               # id must match ^[a-z0-9][a-z0-9-]{1,62}$
+    name: Bad id
+    description: Uppercase and underscore are not allowed in ids.
+    owner: demo
+    version: 0.0.1
+    kind: remote
+    classification: public
+    approval: approved
+    auth: none
+    tags: []
+    tools: []
+    url: https://mcp.example.test/mcp
+
+  - id: plain-http-remote
+    name: Plain HTTP remote
+    description: Remote upstreams must be https and may not receive hub tokens.
+    owner: demo
+    version: "1"
+    kind: remote
+    classification: internal
+    approval: approved
+    auth: hub-jwt            # hub tokens are never sent to remotes in this slice
+    tags: []
+    tools: []
+    url: http://mcp.example.test/mcp   # must be https
+
+  - id: tampered-local
+    name: Tampered local
+    description: Artifact for an unsupported platform with a malformed checksum.
+    owner: demo
+    version: 0.1.0
+    kind: local
+    classification: secret   # not a valid classification
+    approval: approved
+    auth: hub-jwt
+    tags: []
+    tools: []
+    artifacts:
+      windows-amd64:         # only darwin|linux - arm64|amd64
+        url: https://registry.example.test/tampered.tar.gz
+        sha256: "not-a-sha"
