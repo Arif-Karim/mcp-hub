@@ -64,3 +64,10 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   server 100%. **Gate weakness found:** under heavy machine load (5 lanes in parallel, load avg ~39) gremlins timed
   out every mutant, reported 0 killed / 0 lived and the 60% gate still *passed*. Recommend failing verify.sh when
   `Killed + Lived == 0` or running gremlins with `--workers 1` in CI.
+- **Review round (PR #3, reviewer subagent):** caught a real gap the builder's threat model missed — upstream
+  responses were served unmodified on the hub UI origin, so an upstream returning `text/html` could run script that
+  calls `/api/v1`. Fixed test-first (red → green) with a sandbox CSP + nosniff + content-type allowlist, and the
+  loopback/Origin check was promoted from the proxy to a server-wide guard (DNS rebinding on `/api/v1/audit`,
+  CSRF on state-changing routes). Also: no hub token over plaintext http to remote hosts, upstream 401/403 →
+  502 without `WWW-Authenticate`, 499 for client disconnects, audit write-error counter, key-read TOCTOU check.
+  Lesson: proxying third-party bytes onto a privileged origin needs response-side controls, not just request-side.
