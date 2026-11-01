@@ -257,7 +257,7 @@ func TestOriginAndHostChecks(t *testing.T) {
 		{"https://evil.example", "127.0.0.1:7420"},
 		{"http://127.0.0.1.evil.example:7420", "127.0.0.1:7420"},
 		{"null", "127.0.0.1:7420"},
-		{"", "evil.example:7420"},  // DNS rebinding: name resolves to 127.0.0.1
+		{"", "evil.example:7420"}, // DNS rebinding: name resolves to 127.0.0.1
 		{"", "localhost.evil:7420"},
 	}
 	for _, b := range bad {
@@ -435,10 +435,12 @@ func TestTokenFailureIs502AndUpstreamNotCalled(t *testing.T) {
 }
 
 func TestInvalidUpstreamURLFailsClosed(t *testing.T) {
-	f := newFixture(t, resolver{"svc-a": {URL: "://bad", Auth: catalogue.AuthNone}}, nil)
-	rec := serve(f.h, req(http.MethodPost, "/mcp/svc-a", callBody))
-	if rec.Code != http.StatusBadGateway || errCode(t, rec) != "internal" {
-		t.Fatalf("status = %d", rec.Code)
+	for _, u := range []string{"://bad", "http:///no-host", "ftp://example.test/mcp", "file:///etc/passwd"} {
+		f := newFixture(t, resolver{"svc-a": {URL: u, Auth: catalogue.AuthNone}}, nil)
+		rec := serve(f.h, req(http.MethodPost, "/mcp/svc-a", callBody))
+		if rec.Code != http.StatusBadGateway || errCode(t, rec) != "internal" {
+			t.Errorf("%q: status = %d", u, rec.Code)
+		}
 	}
 }
 
