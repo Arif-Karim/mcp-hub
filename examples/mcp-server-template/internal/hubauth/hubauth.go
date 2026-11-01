@@ -8,40 +8,25 @@ package hubauth
 
 import (
 	"context"
-	"crypto/ed25519"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // Leeway tolerates clock skew between hub and server when checking exp/nbf.
 const Leeway = 30 * time.Second
-
-// MinRefetchInterval rate-limits JWKS refetches triggered by unknown kids.
-const MinRefetchInterval = 30 * time.Second
 
 // Sentinel errors. Every verification failure wraps ErrUnauthorized.
 var (
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrUnknownKID   = errors.New("unknown kid")
 )
-
-// KeySource resolves a key id to an Ed25519 public key.
-type KeySource interface {
-	Key(ctx context.Context, kid string) (ed25519.PublicKey, error)
-}
-
-// JWKS is a KeySource backed by a remote JWKS document.
-type JWKS struct{ now func() time.Time }
-
-// NewJWKS returns a JWKS cache for url. A nil client uses a client with a 5s timeout.
-func NewJWKS(_ string, _ *http.Client) *JWKS { return &JWKS{} }
-
-// Key implements KeySource.
-func (j *JWKS) Key(_ context.Context, _ string) (ed25519.PublicKey, error) {
-	return nil, ErrUnknownKID
-}
 
 // Verifier validates hub tokens.
 type Verifier struct {
@@ -50,16 +35,72 @@ type Verifier struct {
 	Audience string
 }
 
-// Verify checks raw and returns its subject.
-func (v *Verifier) Verify(_ context.Context, _ string) (string, error) {
-	return "", ErrUnauthorized
+// Verify checks raw and returns its subject. Errors wrap ErrUnauthorized.
+func (v *Verifier) Verify(ctx context.Context, raw string) (string, error) {
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{jwt.SigningMethodEdDSA.Alg()}),
+		jwt.WithIssuer(v.Issuer),
+		jwt.WithAudience(v.Audience),
+		jwt.WithLeeway(Leeway),
+		jwt.WithExpirationRequired(),
+	)
+	var claims jwt.RegisteredClaims
+	_, err := parser.ParseWithClaims(raw, &claims, func(t *jwt.Token) (any, error) {
+		kid, _ := t.Header["kid"].(string)
+		if kid == "" {
+			return nil, errors.New("missing kid")
+		}
+		return v.Keys.Key(ctx, kid)
+	})
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrUnauthorized, err)
+	}
+	if claims.Subject == "" {
+		return "", fmt.Errorf("%w: missing sub", ErrUnauthorized)
+	}
+	return claims.Subject, nil
+}
+
+type subjectKey struct{}
+
+// WithSubject returns a copy of ctx carrying the authenticated subject.
+func WithSubject(ctx context.Context, sub string) context.Context {
+	return context.WithValue(ctx, subjectKey{}, sub)
 }
 
 // SubjectFrom returns the authenticated subject placed in ctx by Middleware.
-func SubjectFrom(_ context.Context) string { return "" }
+func SubjectFrom(ctx context.Context) string {
+	s, _ := ctx.Value(subjectKey{}).(string)
+	return s
+}
 
 // Middleware rejects requests without a valid hub token with 401
 // {"error":"unauthorized"} and otherwise puts the subject in the request context.
-func Middleware(_ *Verifier, _ *slog.Logger, next http.Handler) http.Handler {
-	return next
+// The rejection reason is logged; the token never is.
+func Middleware(v *Verifier, logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sub, err := authenticate(r, v)
+		if err != nil {
+			logger.Warn("request rejected", "reason", err.Error(), "method", r.Method, "path", r.URL.Path)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(WithSubject(r.Context(), sub)))
+	})
+}
+
+func authenticate(r *http.Request, v *Verifier) (string, error) {
+	h := r.Header.Get("Authorization")
+	if h == "" {
+		return "", fmt.Errorf("%w: missing Authorization header", ErrUnauthorized)
+	}
+	scheme, tok, ok := strings.Cut(h, " ")
+	tok = strings.TrimSpace(tok)
+	if !ok || !strings.EqualFold(scheme, "Bearer") || tok == "" {
+		return "", fmt.Errorf("%w: Authorization is not a bearer token", ErrUnauthorized)
+	}
+	return v.Verify(r.Context(), tok)
 }
