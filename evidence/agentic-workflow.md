@@ -60,3 +60,7 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   upstream cases. Remaining survivors are equivalent mutants (`len > N` vs `>= N` on truncation).
 - Intervention: a shared scratchpad meant another lane's verify log overwrote mine mid-read; switched to
   lane-prefixed log names. `cmd/mcp-hub/main.go` deliberately left unwired to avoid conflicts with integration.
+- Mutation results (serial run, `--workers 1`): token 100% (21/21), proxy 95.5% (42/44), audit 95.7% (22/23),
+  server 100%. **Gate weakness found:** under heavy machine load (5 lanes in parallel, load avg ~39) gremlins timed
+  out every mutant, reported 0 killed / 0 lived and the 60% gate still *passed*. Recommend failing verify.sh when
+  `Killed + Lived == 0` or running gremlins with `--workers 1` in CI.
