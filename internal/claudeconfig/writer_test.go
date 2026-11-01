@@ -445,8 +445,10 @@ func TestRemoveAllLeavesUserAndEditedEntries(t *testing.T) {
 	writeFile(t, w.ClaudeConfig, string(b), 0o600)
 
 	err := w.RemoveAll()
-	if !errors.Is(err, ErrConfigConflict) || !strings.Contains(err.Error(), "hub__cc") {
-		t.Fatalf("err = %v, want ErrConfigConflict naming hub__cc", err)
+	var partial *PartialRemoveError
+	if !errors.Is(err, ErrConfigConflict) || !errors.As(err, &partial) ||
+		strings.Join(partial.Skipped, ",") != "hub__cc" || !strings.Contains(err.Error(), "hub__cc") {
+		t.Fatalf("err = %v, want *PartialRemoveError{Skipped: [hub__cc]} wrapping ErrConfigConflict", err)
 	}
 	got := readServers(t, w.ClaudeConfig)
 	var names []string

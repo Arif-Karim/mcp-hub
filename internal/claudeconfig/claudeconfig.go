@@ -60,6 +60,14 @@ func DefaultPaths() (Paths, error) {
 	}, nil
 }
 
+// PartialRemoveError is returned by RemoveAll when it removed what it could but
+// left user-modified entries in place. It unwraps to ErrConfigConflict.
+type PartialRemoveError struct {
+	Skipped []string // config names left in place
+}
+
+func (e *PartialRemoveError) Error() string { return "not implemented" }
+
 // ServerEntry is the mcpServers value for an HTTP MCP server.
 type ServerEntry struct {
 	Type string `json:"type"`
@@ -72,6 +80,9 @@ type Owned struct {
 	ConfigName string    `json:"configName"`
 	URL        string    `json:"url"`
 	Hash       string    `json:"hash"` // sha256 of the canonical entry JSON
+	// PrevHash is set only while a change to an existing entry is in flight; a
+	// config entry matching it is still ours (the write may have crashed).
+	PrevHash string `json:"prevHash,omitempty"`
 	EnabledAt  time.Time `json:"enabledAt"`
 }
 
