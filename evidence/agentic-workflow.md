@@ -26,3 +26,21 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   efficacy to a meaningless 100%. Re-ran with `--timeout-coefficient 20` to get honest numbers (see verify.md).
 - Gotcha: parallel lane agents share a scratchpad; a `verify.log` was overwritten by another lane's run. Use
   lane-unique filenames for logs.
+
+## Lane A (web UI)
+- **Built:** Vue 3 + Vite + TS UI in `web/` — catalogue (debounced search, kind / enabled-only chips, approval-aware
+  cards), focus-managed detail drawer (`hub__{id}` + proxy URL with copy, restart note), Activity tab (5s polling,
+  privacy-explaining empty state), daemon status pill, Claude Code callout, aria-live toasts. Hand-written CSS
+  tokens, light/dark, responsive to 380px. No component library.
+- **Contract-first:** `src/api/types.ts` mirrors `openapi.yaml`; one `ApiClient` interface with `httpClient`
+  (typed `ApiError {status, code, message}`) and an in-memory `mockClient` (`npm run dev:mock`) that follows the
+  contract's approval/kind rules. `?demoFail=checksum|conflict` makes one enable fail to demo error UX.
+  The mock is tree-shaken out of the production bundle.
+- **TDD:** two red → green cycles (API/lib, then components); 56 Vitest tests. A manual Playwright run against the
+  mock found a real bug the unit tests missed: Esc didn't close the drawer once the toggle button disabled itself
+  mid-request (focus fell to `<body>`). Fixed with a window-level listener plus a regression test.
+- **Gotchas for integration:** (1) the `internal/webui` Go test asserts the *unbuilt* placeholder, so it fails locally
+  after `npm run build` (CI is fine because it never builds the UI). (2) `go test ./...` walks into
+  `web/node_modules/flatted/golang` (a Go package shipped inside an npm dep): harmless "no test files" today, but
+  worth excluding. (3) `npm audit` reports moderate advisories in the dev-only eslint toolchain (minimatch); the only
+  runtime dep is `vue`.
