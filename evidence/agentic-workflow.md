@@ -45,3 +45,18 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   no longer promises a publisher notification that nothing sends; publisher-supplied `docsUrl` is only linked if
   https (or loopback http). `verify.sh` now also builds the UI and checks `internal/webui/dist` stays clean.
 - `npm audit` reports moderate advisories in the dev-only eslint toolchain (minimatch); the only runtime dep is `vue`.
+
+### Lane C (token issuer, MCP proxy, audit log)
+- Builder subagent, own worktree/branch `lane-c-proxy-token-audit`. One red commit with the full security test
+  matrix (alg-confusion HS256-with-public-key, `alg:none`, tampered payload, expired/nbf with injected clock,
+  insecure key perms, Origin/Host DNS-rebinding cases, credential stripping, SSE flush gated on a channel), then
+  green commits per package; all tests passed on the first implementation run.
+- Chose a request-header **allowlist** over the brief's blocklist (strip Authorization/Cookie/Proxy-Authorization):
+  anything not explicitly MCP-related (e.g. `X-Api-Key`) never reaches an upstream. Also strips upstream
+  `Set-Cookie`, since the proxy shares an origin with the hub UI.
+- Fail-closed choices: unknown `auth` mode and token-issue failure both return 502 without calling the upstream;
+  upstream URL must be http(s) with a host; `..` in trailing paths is refused.
+- Mutation gate caught a surviving mutant (`target.Host == ""` check untested) → added host-less/`ftp:`/`file:`
+  upstream cases. Remaining survivors are equivalent mutants (`len > N` vs `>= N` on truncation).
+- Intervention: a shared scratchpad meant another lane's verify log overwrote mine mid-read; switched to
+  lane-prefixed log names. `cmd/mcp-hub/main.go` deliberately left unwired to avoid conflicts with integration.
