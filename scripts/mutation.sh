@@ -18,7 +18,14 @@ if [[ -z "$pkgs" ]]; then
 fi
 for p in $pkgs; do
   echo "--- mutation: $p (efficacy >= ${MUTATION_EFFICACY_MIN}%)"
-  go tool -modfile=tools/go.mod gremlins unleash \
+  out=$(go tool -modfile=tools/go.mod gremlins unleash --workers "${MUTATION_WORKERS:-2}" \
     --timeout-coefficient "$TIMEOUT_COEFFICIENT" \
-    --threshold-efficacy "$MUTATION_EFFICACY_MIN" "./$p"
+    --threshold-efficacy "$MUTATION_EFFICACY_MIN" "./$p" 2>&1) || { echo "$out"; exit 1; }
+  echo "$out" | tail -4
+  # Efficacy ignores TIMED OUT mutants, so "Killed: 0, Lived: 0" would pass the
+  # threshold vacuously. Fail if mutants existed but none were actually tested.
+  if echo "$out" | grep -q 'Killed: 0, Lived: 0' && ! echo "$out" | grep -q 'Timed out: 0, Not viable: 0'; then
+    echo "mutation gate: no mutants were tested in $p (all timed out/not viable) — failing"
+    exit 1
+  fi
 done
