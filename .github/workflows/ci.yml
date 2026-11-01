@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # gitleaks + mutation diff need history
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: verify
+        run: scripts/verify.sh
+
+  mutation:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - name: mutation test changed packages
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: |
+          pkgs=$(git diff --name-only "$BASE_REF"...HEAD -- '*.go' | grep -v '_test.go$' | grep -v '^examples/' | xargs -r -n1 dirname | sort -u || true)
+          [ -z "$pkgs" ] && { echo "no changed Go packages"; exit 0; }
+          for p in $pkgs; do go tool -modfile=tools/go.mod gremlins unleash --threshold-efficacy 60 "./$p"; done
