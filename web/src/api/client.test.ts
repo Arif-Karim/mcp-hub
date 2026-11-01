@@ -54,7 +54,7 @@ describe('httpClient', () => {
   })
 
   it('POSTs enable and disable to the server routes', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { id: 'deepwiki' }))
+    const fetchMock = vi.fn().mockImplementation(async () => jsonResponse(200, { id: 'deepwiki' }))
     vi.stubGlobal('fetch', fetchMock)
     await httpClient.enable('deepwiki')
     await httpClient.disable('deepwiki')
