@@ -76,9 +76,5 @@ func writeFile(target string, r io.Reader, mode, budget int64) (int64, error) {
 		return n, fmt.Errorf("%w: unpacked size exceeds limit", ErrTooLarge)
 	}
 	// Chmod explicitly so the result does not depend on the caller's umask.
-	if err := f.Chmod(perm); err != nil {
-		_ = f.Close()
-		return n, err
-	}
-	return n, f.Close()
+	return n, errors.Join(f.Chmod(perm), f.Close())
 }

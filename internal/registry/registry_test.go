@@ -273,6 +273,52 @@ func TestInstallRejectsDecompressionBomb(t *testing.T) {
 	assertClean(t, root)
 }
 
+func zeros(n int) string { return string(make([]byte, n)) }
+
+func TestInstallUnpackedSizeBudget(t *testing.T) {
+	const limit = 8 << 10
+	cases := []struct {
+		name  string
+		files []entry
+		ok    bool
+	}{
+		{"one file at limit", []entry{file("a", zeros(limit), 0o644)}, true},
+		{"one file over limit", []entry{file("a", zeros(limit+1), 0o644)}, false},
+		{"files summing to limit", []entry{file("a", zeros(limit/2), 0o644), file("b", zeros(limit/2), 0o644)}, true},
+		{"files summing over limit", []entry{file("a", zeros(limit/2), 0o644), file("b", zeros(limit/2+1), 0o644)}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := buildTarGz(t, tc.files...)
+			srv, _ := serve(t, http.StatusOK, body)
+			in, root := installer(t, srv)
+			in.MaxBytes = limit
+			_, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: srv.URL, SHA256: sum(body)})
+			if tc.ok && err != nil {
+				t.Fatalf("err = %v, want success", err)
+			}
+			if !tc.ok {
+				if !errors.Is(err, registry.ErrTooLarge) {
+					t.Fatalf("err = %v, want ErrTooLarge", err)
+				}
+				assertClean(t, root)
+			}
+		})
+	}
+}
+
+func TestInstallDefaultsClientAndLimit(t *testing.T) {
+	body := buildTarGz(t, file("server", "x", 0o755))
+	srv, _ := serve(t, http.StatusOK, body)
+	in := &registry.Installer{Dir: t.TempDir()} // nil Client, zero MaxBytes
+	if _, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: srv.URL, SHA256: sum(body)}); err != nil {
+		t.Fatalf("Install with defaults: %v", err)
+	}
+	if registry.DefaultMaxBytes != 100<<20 {
+		t.Fatalf("DefaultMaxBytes = %d, want 100 MiB", registry.DefaultMaxBytes)
+	}
+}
+
 func TestInstallIsIdempotent(t *testing.T) {
 	body := buildTarGz(t, file("server", "x", 0o755))
 	srv, hits := serve(t, http.StatusOK, body)
