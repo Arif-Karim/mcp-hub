@@ -25,6 +25,11 @@ awk -v t="$total" -v m="$COVERAGE_MIN" 'BEGIN { exit (t+0 >= m+0) ? 0 : 1 }' \
 step "govulncheck"
 tool govulncheck ./...
 
+if [[ -f web/package-lock.json ]]; then
+  step "npm audit (shipped dependencies, high+)"
+  (cd web && npm audit --omit=dev --audit-level=high)
+fi
+
 step "gitleaks (secret scan)"
 go run github.com/zricethezav/gitleaks/v8@v8.30.1 git . --no-banner --redact
 
