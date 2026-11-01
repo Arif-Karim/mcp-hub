@@ -512,9 +512,9 @@ func TestSymlinkTargetUpdatedAndLinkKept(t *testing.T) {
 	if err := os.MkdirAll(dotfiles, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	real := filepath.Join(dotfiles, "claude.json")
-	writeFile(t, real, userConfig, 0o640)
-	if err := os.Symlink(real, w.ClaudeConfig); err != nil {
+	linked := filepath.Join(dotfiles, "claude.json")
+	writeFile(t, linked, userConfig, 0o640)
+	if err := os.Symlink(linked, w.ClaudeConfig); err != nil {
 		t.Fatal(err)
 	}
 	if err := w.Add("svc", entry("svc")); err != nil {
@@ -524,17 +524,17 @@ func TestSymlinkTargetUpdatedAndLinkKept(t *testing.T) {
 	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("symlink replaced by a regular file (err %v)", err)
 	}
-	if dst, _ := os.Readlink(w.ClaudeConfig); dst != real {
+	if dst, _ := os.Readlink(w.ClaudeConfig); dst != linked {
 		t.Fatalf("symlink now points at %s", dst)
 	}
 	var s map[string]json.RawMessage
 	var top map[string]json.RawMessage
-	_ = json.Unmarshal(readBytes(t, real), &top)
+	_ = json.Unmarshal(readBytes(t, linked), &top)
 	_ = json.Unmarshal(top["mcpServers"], &s)
 	if _, ok := s["hub__svc"]; !ok {
-		t.Fatalf("target not updated: %s", readBytes(t, real))
+		t.Fatalf("target not updated: %s", readBytes(t, linked))
 	}
-	if m := mode(t, real); m != 0o640 {
+	if m := mode(t, linked); m != 0o640 {
 		t.Fatalf("target mode = %o", m)
 	}
 	assertNoTempFiles(t, dotfiles)
@@ -648,12 +648,19 @@ func TestConcurrentChangeTwiceIsConflict(t *testing.T) {
 
 func TestConcurrentCreateOfMissingFileDetected(t *testing.T) {
 	w := newWriter(t)
-	w.beforeRename = func() { writeFile(t, w.ClaudeConfig, `{"x":1}`, 0o600) }
-	if err := w.Add("svc", entry("svc")); !errors.Is(err, ErrConfigConflict) {
-		t.Fatalf("err = %v", err)
+	// Claude Code creates the file after we saw it missing; we must merge into it, not clobber it.
+	w.beforeRename = func() { writeFile(t, w.ClaudeConfig, `{"x":1}`, 0o644) }
+	if err := w.Add("svc", entry("svc")); err != nil {
+		t.Fatal(err)
 	}
-	if string(readBytes(t, w.ClaudeConfig)) != `{"x":1}` {
-		t.Fatal("clobbered")
+	if string(readTop(t, w.ClaudeConfig)["x"]) != "1" {
+		t.Fatalf("clobbered: %s", readBytes(t, w.ClaudeConfig))
+	}
+	if _, ok := readServers(t, w.ClaudeConfig)["hub__svc"]; !ok {
+		t.Fatal("our entry missing")
+	}
+	if m := mode(t, w.ClaudeConfig); m != 0o644 {
+		t.Fatalf("mode = %o, want the concurrently created file's 644", m)
 	}
 }
 
