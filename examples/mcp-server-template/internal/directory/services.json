@@ -1,0 +1,66 @@
+[
+  {
+    "name": "ledger-api",
+    "team": "core-ledger",
+    "tags": ["payments", "ledger", "grpc"],
+    "channel": "#oncall-core-ledger",
+    "tier": 1,
+    "runbook": "# ledger-api runbook\n\n## Symptoms\n- p99 latency > 500ms on PostEntry\n- 5xx rate > 1%\n\n## First steps\n1. Check the `ledger-api` dashboard for DB connection saturation.\n2. If the replica lag alert is firing, fail reads over to the primary pool.\n3. Page #oncall-core-ledger if the error budget burn rate exceeds 10x.\n\n## Rollback\nRedeploy the previous release tag via the deploy pipeline. Never edit ledger rows by hand."
+  },
+  {
+    "name": "fx-rates",
+    "team": "markets-data",
+    "tags": ["markets", "pricing", "batch"],
+    "channel": "#oncall-markets-data",
+    "tier": 2,
+    "runbook": "# fx-rates runbook\n\n## Symptoms\n- Rates older than 5 minutes (`fx_rates_staleness_seconds` > 300)\n\n## First steps\n1. Check the upstream feed health page (synthetic provider `example-feed`).\n2. Restart the `fx-rates-ingest` worker; it is idempotent.\n3. If still stale, enable the cached-rates fallback flag and notify #oncall-markets-data."
+  },
+  {
+    "name": "customer-profile",
+    "team": "digital-identity",
+    "tags": ["customers", "pii", "rest"],
+    "channel": "#oncall-digital-identity",
+    "tier": 1,
+    "runbook": "# customer-profile runbook\n\n## Symptoms\n- Elevated 401/403 from the profile API\n\n## First steps\n1. Confirm the IdP signing keys rotated cleanly (check JWKS cache metrics).\n2. Do not export or paste profile records into tickets; reference request ids only.\n3. Escalate to #oncall-digital-identity."
+  },
+  {
+    "name": "notification-hub",
+    "team": "engagement",
+    "tags": ["messaging", "email", "sms", "kafka"],
+    "channel": "#oncall-engagement",
+    "tier": 2,
+    "runbook": "# notification-hub runbook\n\n## Symptoms\n- Kafka consumer lag on `notifications.v1` > 10k\n\n## First steps\n1. Scale the consumer deployment to 6 replicas.\n2. Check the synthetic SMS provider status page.\n3. Dead-lettered messages are replayed with the `replay-dlq` job; never replay twice."
+  },
+  {
+    "name": "loan-origination",
+    "team": "lending-platform",
+    "tags": ["lending", "workflow", "rest"],
+    "channel": "#oncall-lending-platform",
+    "tier": 1,
+    "runbook": "# loan-origination runbook\n\n## Symptoms\n- Applications stuck in `PENDING_CREDIT_CHECK`\n\n## First steps\n1. Check the credit-check adapter circuit breaker state.\n2. If open for > 10 minutes, page #oncall-lending-platform.\n3. Stuck applications resume automatically once the breaker closes."
+  },
+  {
+    "name": "feature-flags",
+    "team": "platform-engineering",
+    "tags": ["platform", "config"],
+    "channel": "#oncall-platform",
+    "tier": 2,
+    "runbook": "# feature-flags runbook\n\n## Symptoms\n- Clients serving default flag values\n\n## First steps\n1. Clients fail safe to defaults; confirm no customer impact first.\n2. Check the flag store replication status.\n3. Escalate to #oncall-platform."
+  },
+  {
+    "name": "build-cache",
+    "team": "developer-experience",
+    "tags": ["platform", "ci", "internal-tools"],
+    "channel": "#oncall-devex",
+    "tier": 3,
+    "runbook": "# build-cache runbook\n\n## Symptoms\n- CI builds slower than usual, cache hit rate < 50%\n\n## First steps\n1. Check disk usage on the cache nodes; evict with the `cache-gc` job.\n2. Builds still succeed without the cache, so this is business-hours only."
+  },
+  {
+    "name": "fraud-scoring",
+    "team": "financial-crime",
+    "tags": ["payments", "ml", "grpc"],
+    "channel": "#oncall-financial-crime",
+    "tier": 1,
+    "runbook": "# fraud-scoring runbook\n\n## Symptoms\n- Score latency > 100ms or model-server 5xx\n\n## First steps\n1. Payments fall back to rules-only scoring automatically; confirm the fallback metric is rising.\n2. Roll back the most recent model version in the model registry.\n3. Page #oncall-financial-crime for any fallback lasting > 15 minutes."
+  }
+]
