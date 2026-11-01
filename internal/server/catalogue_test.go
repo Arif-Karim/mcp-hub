@@ -2,6 +2,8 @@ package server_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -9,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
+	"github.com/Arif-Karim/mcp-hub/internal/httpx"
+	"github.com/Arif-Karim/mcp-hub/internal/registry"
 	"github.com/Arif-Karim/mcp-hub/internal/server"
 )
 
@@ -149,10 +153,36 @@ func TestCatalogueUsesStateFunc(t *testing.T) {
 
 func TestCatalogueRejectsWrongMethod(t *testing.T) {
 	h := server.New(server.Options{Catalogue: testCatalogue()})
-	for _, target := range []string{"/api/v1/catalogue", "/api/v1/catalogue/svc"} {
+	for _, target := range []string{"/api/v1/catalogue", "/api/v1/catalogue/svc", "/api/v1/health"} {
 		rec, body := do(t, h, http.MethodPost, target)
 		if rec.Code != http.StatusMethodNotAllowed || errCode(body) != "bad_request" {
 			t.Errorf("POST %s: status = %d code = %q, want 405 bad_request", target, rec.Code, errCode(body))
+		}
+		if got := rec.Header().Get("Allow"); got != "GET, HEAD" { // RFC 9110 §15.5.6
+			t.Errorf("POST %s: Allow = %q, want \"GET, HEAD\"", target, got)
+		}
+	}
+}
+
+func TestErrorStatusMapsSentinelsToContractCodes(t *testing.T) {
+	cases := []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{fmt.Errorf("x: %w", catalogue.ErrNotFound), http.StatusNotFound, httpx.CodeNotFound},
+		{catalogue.ErrNotApproved, http.StatusForbidden, httpx.CodeNotApproved},
+		{registry.ErrChecksumMismatch, http.StatusUnprocessableEntity, httpx.CodeChecksumMismatch},
+		{fmt.Errorf("x: %w", registry.ErrTooLarge), http.StatusUnprocessableEntity, httpx.CodeArtifactRejected},
+		{fmt.Errorf("x: %w", registry.ErrUnsafeArchive), http.StatusUnprocessableEntity, httpx.CodeArtifactRejected},
+		{registry.ErrUnsupportedPlatform, http.StatusUnprocessableEntity, httpx.CodeUnsupportedPlatform},
+		{registry.ErrRegistryUnavailable, http.StatusBadGateway, httpx.CodeRegistryUnavailable},
+		{errors.New("boom"), http.StatusInternalServerError, httpx.CodeInternal},
+	}
+	for _, tc := range cases {
+		status, code := server.ErrorStatus(tc.err)
+		if status != tc.status || code != tc.code {
+			t.Errorf("ErrorStatus(%v) = %d %s, want %d %s", tc.err, status, code, tc.status, tc.code)
 		}
 	}
 }

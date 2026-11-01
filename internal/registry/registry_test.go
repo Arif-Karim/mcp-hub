@@ -8,11 +8,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -218,14 +221,141 @@ func TestInstallRejectsUnsafeArchives(t *testing.T) {
 			srv, _ := serve(t, http.StatusOK, body)
 			in, root := installer(t, srv)
 			_, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: srv.URL, SHA256: sum(body)})
-			if !errors.Is(err, registry.ErrUnsafeArchive) {
-				t.Fatalf("err = %v, want ErrUnsafeArchive", err)
+			if !errors.Is(err, registry.ErrUnsafeArchive) || !errors.Is(err, registry.ErrArtifactRejected) {
+				t.Fatalf("err = %v, want ErrUnsafeArchive (an ErrArtifactRejected)", err)
 			}
+			// assertClean walks the whole install root, so an escaped "../evil"
+			// (which would land in root/svc) is caught here too.
 			assertClean(t, root)
-			if _, err := os.Stat(filepath.Join(filepath.Dir(root), "evil")); err == nil {
-				t.Fatal("traversal wrote outside the install dir")
-			}
 		})
+	}
+}
+
+func TestInstallVerifiesChecksumBeforeUnpacking(t *testing.T) {
+	body := buildTarGz(t, file("../evil", "x", 0o644))
+	srv, _ := serve(t, http.StatusOK, body)
+	in, root := installer(t, srv)
+	_, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: srv.URL, SHA256: sum([]byte("other"))})
+	if !errors.Is(err, registry.ErrChecksumMismatch) || errors.Is(err, registry.ErrUnsafeArchive) {
+		t.Fatalf("err = %v, want ErrChecksumMismatch only: an unverified archive must never be opened", err)
+	}
+	assertClean(t, root)
+}
+
+func TestInstallRejectsTooManyEntries(t *testing.T) {
+	var es []entry
+	for i := range 6 {
+		es = append(es, file(fmt.Sprintf("f%d", i), "", 0o644))
+	}
+	body := buildTarGz(t, es...)
+	srv, _ := serve(t, http.StatusOK, body)
+	in, root := installer(t, srv)
+	in.MaxEntries = 5
+	_, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: srv.URL, SHA256: sum(body)})
+	if !errors.Is(err, registry.ErrTooLarge) || !errors.Is(err, registry.ErrArtifactRejected) {
+		t.Fatalf("err = %v, want ErrTooLarge (an ErrArtifactRejected)", err)
+	}
+	assertClean(t, root)
+
+	in.MaxEntries = 6 // exactly at the limit is fine
+	if _, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: srv.URL, SHA256: sum(body)}); err != nil {
+		t.Fatalf("at limit: %v", err)
+	}
+	if registry.DefaultMaxEntries != 10_000 {
+		t.Fatalf("DefaultMaxEntries = %d", registry.DefaultMaxEntries)
+	}
+}
+
+func TestInstallSkipsPaxGlobalHeader(t *testing.T) {
+	// git archive emits a pax global header; it carries no file data.
+	body := buildTarGz(t,
+		entry{tar.Header{Name: "pax_global_header", Typeflag: tar.TypeXGlobalHeader, PAXRecords: map[string]string{"comment": "abc"}}, ""},
+		file("server", "x", 0o755),
+	)
+	srv, _ := serve(t, http.StatusOK, body)
+	in, _ := installer(t, srv)
+	dir, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: srv.URL, SHA256: sum(body)})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "pax_global_header")); err == nil {
+		t.Fatal("global header written as a file")
+	}
+}
+
+func TestInstallConcurrentCallersShareOneInstall(t *testing.T) {
+	body := buildTarGz(t, file("server", "x", 0o755))
+	srv, hits := serve(t, http.StatusOK, body)
+	in, root := installer(t, srv)
+	a := catalogue.Artifact{URL: srv.URL, SHA256: sum(body)}
+
+	const n = 8
+	dirs := make([]string, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() { dirs[i], errs[i] = in.Install(context.Background(), "svc", "1", a) })
+	}
+	wg.Wait()
+	for i := range n {
+		if errs[i] != nil {
+			t.Fatalf("caller %d: %v", i, errs[i])
+		}
+		if dirs[i] != filepath.Join(root, "svc", "1") {
+			t.Fatalf("caller %d dir = %q", i, dirs[i])
+		}
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("registry hit %d times, want 1", got)
+	}
+}
+
+func TestInstallSweepsLeftoversFromCrashedInstalls(t *testing.T) {
+	body := buildTarGz(t, file("server", "x", 0o755))
+	srv, _ := serve(t, http.StatusOK, body)
+	in, root := installer(t, srv)
+	parent := filepath.Join(root, "svc")
+	for _, d := range []string{".staging-123", "1.old-456"} {
+		if err := os.MkdirAll(filepath.Join(parent, d, "junk"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(parent, ".download-789"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Another version's install must be left alone.
+	if err := os.MkdirAll(filepath.Join(parent, "0.9"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: srv.URL, SHA256: sum(body)}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadDir(parent)
+	var names []string
+	for _, e := range got {
+		names = append(names, e.Name())
+	}
+	if !reflect.DeepEqual(names, []string{"0.9", "1"}) {
+		t.Fatalf("parent contains %v, want [0.9 1]", names)
+	}
+}
+
+func TestInstallRefusesSchemeDowngradeRedirect(t *testing.T) {
+	body := buildTarGz(t, file("server", "x", 0o755))
+	plain, hits := serve(t, http.StatusOK, body)
+	tlsSrv := httptest.NewTLSServer(http.RedirectHandler(plain.URL, http.StatusFound))
+	t.Cleanup(tlsSrv.Close)
+	in := &registry.Installer{Client: tlsSrv.Client(), Dir: t.TempDir()}
+	_, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: tlsSrv.URL, SHA256: sum(body)})
+	if !errors.Is(err, registry.ErrRegistryUnavailable) || hits.Load() != 0 {
+		t.Fatalf("err = %v, plain-http hits = %d; want refused redirect", err, hits.Load())
+	}
+	// http -> http (loopback test registries) still follows redirects.
+	redir := httptest.NewServer(http.RedirectHandler(plain.URL, http.StatusFound))
+	t.Cleanup(redir.Close)
+	in = &registry.Installer{Client: redir.Client(), Dir: t.TempDir()}
+	if _, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: redir.URL, SHA256: sum(body)}); err != nil {
+		t.Fatalf("same-scheme redirect: %v", err)
 	}
 }
 
@@ -360,6 +490,10 @@ func TestInstallReplacesStaleInstall(t *testing.T) {
 	got, _ := os.ReadFile(filepath.Join(dir, "server"))
 	if string(got) != "new" || hits.Load() != 1 {
 		t.Fatalf("server = %q, hits = %d; want fresh install", got, hits.Load())
+	}
+	// The old tree is moved aside then removed: nothing but the new install remains.
+	if got := entries(t, filepath.Join(root, "svc")); !reflect.DeepEqual(got, []string{"1", "1/.sha256", "1/server"}) {
+		t.Fatalf("svc contains %v", got)
 	}
 }
 
