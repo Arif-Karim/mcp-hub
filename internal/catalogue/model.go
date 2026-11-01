@@ -2,6 +2,19 @@
 // servers developers may enable. The model mirrors api/openapi.yaml.
 package catalogue
 
+import (
+	"errors"
+	"fmt"
+	"time"
+)
+
+// Sentinel errors; the API maps them to contract error codes.
+var (
+	ErrNotFound    = errors.New("catalogue entry not found")
+	ErrNotApproved = errors.New("catalogue entry not approved")
+	ErrInvalid     = errors.New("invalid catalogue")
+)
+
 // Kind says where an MCP server runs.
 type Kind string
 
@@ -78,4 +91,38 @@ type Entry struct {
 type Catalogue struct {
 	Version int     `yaml:"version"`
 	Entries []Entry `yaml:"entries"`
+}
+
+// Status is the install status reported to the UI.
+type Status string
+
+// Install statuses (api/openapi.yaml InstallState.status).
+const (
+	StatusDisabled Status = "disabled"
+	StatusRunning  Status = "running"
+	StatusStopped  Status = "stopped"
+	StatusReady    Status = "ready"
+	StatusError    Status = "error"
+)
+
+// InstallState is the caller's install state for one entry.
+type InstallState struct {
+	Enabled    bool      `json:"enabled"`
+	Status     Status    `json:"status"`
+	ConfigName string    `json:"configName"`
+	ProxyURL   string    `json:"proxyUrl,omitempty"`
+	EnabledAt  time.Time `json:"enabledAt,omitzero"`
+	LastError  string    `json:"lastError,omitempty"`
+}
+
+// ConfigName is the key an entry gets in Claude Code's mcpServers. The "hub__"
+// prefix marks it as hub-owned so we never touch the user's own entries.
+func ConfigName(id string) string { return "hub__" + id }
+
+// CanEnable reports whether governance allows the entry to be enabled.
+func CanEnable(e Entry) error {
+	if e.Approval != ApprovalApproved {
+		return fmt.Errorf("%w: %s is %s", ErrNotApproved, e.ID, e.Approval)
+	}
+	return nil
 }
