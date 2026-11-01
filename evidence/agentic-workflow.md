@@ -27,7 +27,7 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
 - Gotcha: parallel lane agents share a scratchpad; a `verify.log` was overwritten by another lane's run. Use
   lane-unique filenames for logs.
 
-## Lane A (web UI)
+### Lane A (web UI)
 - **Built:** Vue 3 + Vite + TS UI in `web/` — catalogue (debounced search, kind / enabled-only chips, approval-aware
   cards), focus-managed detail drawer (`hub__{id}` + proxy URL with copy, restart note), Activity tab (5s polling,
   privacy-explaining empty state), daemon status pill, Claude Code callout, aria-live toasts. Hand-written CSS
