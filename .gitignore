@@ -10,3 +10,6 @@ internal/webui/dist/*
 !internal/webui/dist/.gitkeep
 .env
 .env.*
+
+# Agent worktrees
+.claude/worktrees/

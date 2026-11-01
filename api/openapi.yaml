@@ -87,7 +87,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" } # not_approved
         "404": { $ref: "#/components/responses/Error" } # not_found
         "409": { $ref: "#/components/responses/Error" } # config_conflict
-        "422": { $ref: "#/components/responses/Error" } # checksum_mismatch, unsupported_platform, config_invalid
+        "422": { $ref: "#/components/responses/Error" } # checksum_mismatch, artifact_rejected, unsupported_platform, config_invalid
         "502": { $ref: "#/components/responses/Error" } # registry_unavailable, start_failed
   /servers/{id}/disable:
     post:
@@ -233,6 +233,7 @@ components:
                 - not_found
                 - not_approved
                 - checksum_mismatch
+                - artifact_rejected
                 - unsupported_platform
                 - registry_unavailable
                 - start_failed

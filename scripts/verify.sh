@@ -6,8 +6,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 COVERAGE_MIN="${COVERAGE_MIN:-70}"
-MUTATION_EFFICACY_MIN="${MUTATION_EFFICACY_MIN:-60}"
-BASE_REF="${BASE_REF:-origin/main}"
 tool() { go tool -modfile=tools/go.mod "$@"; }
 step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
@@ -41,17 +39,8 @@ if [[ -f web/package.json ]]; then
 fi
 
 if [[ "${1:-}" == "--mutation" ]]; then
-  step "mutation testing (changed packages vs ${BASE_REF}, efficacy >= ${MUTATION_EFFICACY_MIN}%)"
-  pkgs=$(git diff --name-only "${BASE_REF}"...HEAD -- '*.go' 2>/dev/null \
-    | grep -v '_test.go$' | grep -v '^examples/' | xargs -r -n1 dirname | sort -u || true)
-  if [[ -z "$pkgs" ]]; then
-    echo "no changed Go packages; skipping"
-  else
-    for p in $pkgs; do
-      echo "--- $p"
-      tool gremlins unleash --threshold-efficacy "$MUTATION_EFFICACY_MIN" "./$p"
-    done
-  fi
+  step "mutation testing (changed packages)"
+  scripts/mutation.sh
 fi
 
 step "all checks passed"

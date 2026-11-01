@@ -13,6 +13,7 @@ const (
 	CodeNotFound            = "not_found"
 	CodeNotApproved         = "not_approved"
 	CodeChecksumMismatch    = "checksum_mismatch"
+	CodeArtifactRejected    = "artifact_rejected" // unsafe archive or over size limit
 	CodeUnsupportedPlatform = "unsupported_platform"
 	CodeRegistryUnavailable = "registry_unavailable"
 	CodeStartFailed         = "start_failed"

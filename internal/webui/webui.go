@@ -17,6 +17,10 @@ func Handler() http.Handler {
 	if err != nil {
 		panic(err) // embed path is fixed at compile time
 	}
+	return handlerFor(sub)
+}
+
+func handlerFor(sub fs.FS) http.Handler {
 	if _, err := fs.Stat(sub, "index.html"); err != nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
