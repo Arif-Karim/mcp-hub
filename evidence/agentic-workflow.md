@@ -13,3 +13,16 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   Intervention: two pinned tools (golangci-lint, gitleaks) had incompatible shared deps in one tools module
   → moved gitleaks to `go run …@version`. Coverage gate caught 26% on first run → scoped gate to `internal/...`
   (cmd is wiring, covered by e2e) and added tests.
+
+### Lane B (catalogue + registry + catalogue API)
+- Builder subagent in an isolated git worktree; three red → green pairs (catalogue, registry, server) visible in history.
+- Validation reports **every** problem at once (`errors.Join`, each naming entry id + field), so a catalogue PR
+  reviewer sees the whole list; `sample-data/invalid-catalogue.yaml` demos it and a test keeps it invalid.
+- Security calls made in-lane: remotes must be `auth: none` (no hub JWTs to third parties), sha256 checked
+  before anything is unpacked, tar entries limited to plain files/dirs, unpacked size capped (decompression bomb).
+- Mutation gate found 5 surviving registry mutants (size-budget arithmetic, nil-client default) → added
+  boundary tests; efficacy 84.9% → 95.4%.
+- Intervention: gremlins' default timeout marked 26/34 catalogue mutants "timed out" (not counted), inflating
+  efficacy to a meaningless 100%. Re-ran with `--timeout-coefficient 20` to get honest numbers (see verify.md).
+- Gotcha: parallel lane agents share a scratchpad; a `verify.log` was overwritten by another lane's run. Use
+  lane-unique filenames for logs.
