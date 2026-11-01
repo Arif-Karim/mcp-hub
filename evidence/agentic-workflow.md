@@ -4,7 +4,7 @@
 Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: reviews, tests, merges.
 
 ## Log
-- **Pre-timebox planning (~1h25m, Toggl):** read the brief with Claude Code, scoped down from the original
+- **Pre-timebox planning:** read the brief with Claude Code, scoped down from the original
   idea (MCP + plugin marketplace + devcontainers) to one vertical slice; agreed guarded-failure list,
   user-scope config with a `hub__` marker + ledger, skill-driven UX, prebuilt-binary install for assessors.
   Saved the multi-agent pipeline as global agent instructions.
