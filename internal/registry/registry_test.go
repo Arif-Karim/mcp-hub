@@ -341,6 +341,24 @@ func TestInstallSweepsLeftoversFromCrashedInstalls(t *testing.T) {
 	}
 }
 
+func TestInstallStopsRedirectLoops(t *testing.T) {
+	var hits atomic.Int32
+	var loop *httptest.Server
+	loop = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Redirect(w, r, loop.URL, http.StatusFound)
+	}))
+	t.Cleanup(loop.Close)
+	in := &registry.Installer{Client: loop.Client(), Dir: t.TempDir()}
+	_, err := in.Install(context.Background(), "svc", "1", catalogue.Artifact{URL: loop.URL, SHA256: sum(nil)})
+	if !errors.Is(err, registry.ErrRegistryUnavailable) {
+		t.Fatalf("err = %v, want ErrRegistryUnavailable", err)
+	}
+	if got := hits.Load(); got != 10 {
+		t.Fatalf("registry hit %d times, want 10 (initial + 9 redirects)", got)
+	}
+}
+
 func TestInstallRefusesSchemeDowngradeRedirect(t *testing.T) {
 	body := buildTarGz(t, file("server", "x", 0o755))
 	plain, hits := serve(t, http.StatusOK, body)
