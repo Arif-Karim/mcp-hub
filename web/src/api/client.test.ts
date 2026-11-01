@@ -45,6 +45,13 @@ describe('httpClient', () => {
     expect(err).toMatchObject({ status: 0, code: 'network' })
   })
 
+  it('throws ApiError internal when a 2xx body is not JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>ok</html>', { status: 200 })))
+    const err = await httpClient.status().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err).toMatchObject({ status: 200, code: 'internal' })
+  })
+
   it('sends q and kind as query params and unwraps items', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { items: [] }))
     vi.stubGlobal('fetch', fetchMock)

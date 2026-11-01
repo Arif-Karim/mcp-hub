@@ -38,6 +38,22 @@ describe('DetailDrawer', () => {
     expect(w.findAll('[data-test=copy]')).toHaveLength(2)
   })
 
+  it.each([
+    ['https://docs.example.test/x', true],
+    ['http://localhost:8080/docs', true],
+    ['http://127.0.0.1:8080/docs', true],
+    ['http://docs.example.test/x', false],
+    ['javascript:alert(1)', false],
+    ['not a url', false],
+  ])('renders docsUrl %s as a link: %s', (url, shown) => {
+    const i = item('deepwiki')
+    i.docsUrl = url
+    const w = mount(DetailDrawer, { props: { item: i } })
+    const link = w.find('[data-test=docs]')
+    expect(link.exists()).toBe(shown)
+    if (shown) expect(link.attributes('href')).toBe(url)
+  })
+
   it('closes on Escape and via the close button', async () => {
     const w = mount(DetailDrawer, { props: { item: item('deepwiki') }, attachTo: document.body })
     await w.get('[role=dialog]').trigger('keydown', { key: 'Escape' })
