@@ -39,8 +39,9 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
 - **TDD:** two red → green cycles (API/lib, then components); 56 Vitest tests. A manual Playwright run against the
   mock found a real bug the unit tests missed: Esc didn't close the drawer once the toggle button disabled itself
   mid-request (focus fell to `<body>`). Fixed with a window-level listener plus a regression test.
-- **Gotchas for integration:** (1) the `internal/webui` Go test asserts the *unbuilt* placeholder, so it fails locally
-  after `npm run build` (CI is fine because it never builds the UI). (2) `go test ./...` walks into
-  `web/node_modules/flatted/golang` (a Go package shipped inside an npm dep): harmless "no test files" today, but
-  worth excluding. (3) `npm audit` reports moderate advisories in the dev-only eslint toolchain (minimatch); the only
-  runtime dep is `vue`.
+- **Review round (one batched review, no must-fix):** six should-fixes taken as one more red → green cycle. The
+  notable ones: a 404 from a route that isn't wired yet no longer claims "server no longer in the catalogue"; the
+  header tells "daemon unreachable" (no response) apart from "status unavailable" (HTTP error); the checksum message
+  no longer promises a publisher notification that nothing sends; publisher-supplied `docsUrl` is only linked if
+  https (or loopback http). `verify.sh` now also builds the UI and checks `internal/webui/dist` stays clean.
+- `npm audit` reports moderate advisories in the dev-only eslint toolchain (minimatch); the only runtime dep is `vue`.
