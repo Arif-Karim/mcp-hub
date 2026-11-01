@@ -13,21 +13,24 @@ const reason = computed(() => blockedReason[props.item.approval])
 const titleId = computed(() => `drawer-title-${props.item.id}`)
 let returnFocus: Element | null = null
 
+// Esc is handled at window level so it still works if focus left the drawer
+// (e.g. the toggle button was disabled while a request was in flight).
+function onWindowKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') emit('close')
+}
+
 onMounted(async () => {
   returnFocus = document.activeElement
+  window.addEventListener('keydown', onWindowKeydown)
   await nextTick()
   closeBtn.value?.focus()
 })
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onWindowKeydown)
   if (returnFocus instanceof HTMLElement) returnFocus.focus()
 })
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    e.stopPropagation()
-    emit('close')
-    return
-  }
   if (e.key !== 'Tab' || !dialog.value) return
   // Keep focus inside the drawer while it is open.
   const focusable = dialog.value.querySelectorAll<HTMLElement>(

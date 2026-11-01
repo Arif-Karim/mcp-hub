@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DetailDrawer from './DetailDrawer.vue'
 import { fixture } from '../api/fixture'
@@ -44,6 +44,16 @@ describe('DetailDrawer', () => {
     await w.get('[data-test=close]').trigger('click')
     expect(w.emitted('close')).toHaveLength(2)
     w.unmount()
+  })
+
+  it('closes on Escape even when focus has left the drawer', async () => {
+    const onClose = vi.fn()
+    const w = mount(DetailDrawer, { props: { item: item('deepwiki'), onClose }, attachTo: document.body })
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    w.unmount()
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(onClose).toHaveBeenCalledTimes(1) // listener removed on unmount
   })
 
   it('moves focus into the drawer when opened', async () => {
