@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -104,7 +106,8 @@ func validateLocal(e Entry, bad reporter) {
 	if e.Approval == ApprovalApproved && len(e.Artifacts) == 0 {
 		bad("artifacts", "approved local entries need at least one artifact")
 	}
-	for p, a := range e.Artifacts {
+	for _, p := range slices.Sorted(maps.Keys(e.Artifacts)) { // sorted: stable error output
+		a := e.Artifacts[p]
 		field := fmt.Sprintf("artifacts[%q]", p)
 		if !platformPattern.MatchString(p) {
 			bad(field, "platform must match %s", platformPattern)

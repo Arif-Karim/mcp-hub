@@ -1,6 +1,36 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestLoadCatalogue(t *testing.T) {
+	t.Setenv("MCP_HUB_CATALOGUE", "")
+	s, err := loadCatalogue()
+	if err != nil {
+		t.Fatalf("embedded: %v", err)
+	}
+	if _, err := s.Get("deepwiki"); err != nil {
+		t.Fatalf("embedded catalogue missing deepwiki: %v", err)
+	}
+
+	t.Setenv("MCP_HUB_CATALOGUE", filepath.Join("..", "..", "sample-data", "invalid-catalogue.yaml"))
+	if _, err := loadCatalogue(); err == nil || !strings.Contains(err.Error(), "invalid-catalogue.yaml") {
+		t.Fatalf("invalid override: err = %v, want error naming the file", err)
+	}
+
+	good := filepath.Join(t.TempDir(), "c.yaml")
+	if err := os.WriteFile(good, []byte("version: 1\nentries: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MCP_HUB_CATALOGUE", good)
+	if s, err := loadCatalogue(); err != nil || len(s.Search("", "")) != 0 {
+		t.Fatalf("override: %v", err)
+	}
+}
 
 func TestRequireLoopback(t *testing.T) {
 	cases := []struct {
