@@ -71,3 +71,14 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   CSRF on state-changing routes). Also: no hub token over plaintext http to remote hosts, upstream 401/403 →
   502 without `WWW-Authenticate`, 499 for client disconnects, audit write-error counter, key-read TOCTOU check.
   Lesson: proxying third-party bytes onto a privileged origin needs response-side controls, not just request-side.
+
+### Lane D (Claude Code config writer + ledger)
+- Builder subagent, single worktree, branch `lane-d-claude-config`. Red commit specified 20+ behaviours first
+  (preserve unrelated keys, invalid file untouched, ownership conflicts, symlinks, mode, backups, lost-update guard, id validation).
+- Green surfaced one wrong test, not wrong code: "Claude Code creates the file mid-write" expected a conflict, but the
+  re-read-and-re-apply path correctly merged into the new file. Test changed to assert the merge (noted in the commit).
+- Lint (revive) caught shadowing the `real` builtin; renamed.
+- Mutation: 62 killed / 6 lived (91% efficacy). Survivors are fsync/dir-sync/close error branches and an `attempt++`→`--`
+  mutant that yields identical retry behaviour — accepted as equivalent rather than adding fault-injection seams.
+- Tests use `t.TempDir()` for config, ledger and backups and set `HOME` to a temp dir for `DefaultPaths`; the real
+  `~/.claude.json` is never read or written.
