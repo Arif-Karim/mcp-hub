@@ -2,7 +2,6 @@ package server_test
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,13 +10,6 @@ import (
 	"github.com/Arif-Karim/mcp-hub/internal/audit"
 	"github.com/Arif-Karim/mcp-hub/internal/server"
 )
-
-// localReq builds a request as Claude Code / the UI would send it: Host is the loopback daemon.
-func localReq(method, target string, body io.Reader) *http.Request {
-	r := httptest.NewRequest(method, target, body)
-	r.Host = "127.0.0.1:7420"
-	return r
-}
 
 func guarded(t *testing.T) http.Handler {
 	t.Helper()

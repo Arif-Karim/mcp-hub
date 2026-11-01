@@ -5,8 +5,8 @@ package server
 import (
 	"net/http"
 
-	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
 	"github.com/Arif-Karim/mcp-hub/internal/audit"
+	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
 	"github.com/Arif-Karim/mcp-hub/internal/httpx"
 )
 
