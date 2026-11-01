@@ -315,12 +315,13 @@ func TestInstallSweepsLeftoversFromCrashedInstalls(t *testing.T) {
 	srv, _ := serve(t, http.StatusOK, body)
 	in, root := installer(t, srv)
 	parent := filepath.Join(root, "svc")
-	for _, d := range []string{".staging-123", "1.old-456"} {
-		if err := os.MkdirAll(filepath.Join(parent, d, "junk"), 0o700); err != nil {
+	// Leftovers from a crash mid-install of version 1 (staging, old tree, download).
+	for _, d := range []string{".work-1/staging/junk", ".work-1/old/junk"} {
+		if err := os.MkdirAll(filepath.Join(parent, d), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(parent, ".download-789"), []byte("x"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(parent, ".work-1", "download"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// Another version's install must be left alone.
@@ -519,7 +520,7 @@ func TestInstallHonoursContext(t *testing.T) {
 func TestInstallRejectsUnsafeIDOrVersion(t *testing.T) {
 	srv, hits := serve(t, http.StatusOK, nil)
 	in, _ := installer(t, srv)
-	for _, iv := range [][2]string{{"..", "1"}, {"svc", "../x"}, {"svc", "a/b"}, {"", "1"}, {"svc", ""}} {
+	for _, iv := range [][2]string{{"..", "1"}, {"svc", "../x"}, {"svc", "a/b"}, {"", "1"}, {"svc", ""}, {"svc", ".work-1"}, {"svc", `a\b`}} {
 		_, err := in.Install(context.Background(), iv[0], iv[1], catalogue.Artifact{URL: srv.URL, SHA256: sum(nil)})
 		if !errors.Is(err, registry.ErrUnsafeArchive) {
 			t.Errorf("%v: err = %v, want ErrUnsafeArchive", iv, err)

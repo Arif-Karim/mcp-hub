@@ -42,6 +42,8 @@ func New(opts Options) http.Handler {
 	return mux
 }
 
+// methodNotAllowed answers the read-only routes; Allow is required by RFC 9110.
 func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Allow", "GET, HEAD")
 	httpx.WriteError(w, http.StatusMethodNotAllowed, httpx.CodeBadRequest, "method not allowed")
 }

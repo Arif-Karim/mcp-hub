@@ -13,8 +13,10 @@ import (
 // unpack extracts a .tar.gz into dst (a fresh, empty directory). Only plain
 // directories and regular files are allowed: absolute paths, ".." traversal,
 // symlinks, hardlinks and device/fifo entries are rejected, and the total
-// unpacked size is capped at maxBytes to stop decompression bombs.
-func unpack(r io.Reader, dst string, maxBytes int64) error {
+// unpacked size and entry count are capped (decompression bombs, inode
+// exhaustion). pax global headers (emitted by git archive) carry no file data
+// and are skipped.
+func unpack(r io.Reader, dst string, maxBytes int64, maxEntries int) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
 		return fmt.Errorf("%w: not a gzip stream: %w", ErrUnsafeArchive, err)
@@ -22,6 +24,7 @@ func unpack(r io.Reader, dst string, maxBytes int64) error {
 	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 	var total int64
+	entries := 0
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -29,6 +32,12 @@ func unpack(r io.Reader, dst string, maxBytes int64) error {
 		}
 		if err != nil {
 			return fmt.Errorf("%w: corrupt tar: %w", ErrUnsafeArchive, err)
+		}
+		if hdr.Typeflag == tar.TypeXGlobalHeader {
+			continue
+		}
+		if entries++; entries > maxEntries {
+			return fmt.Errorf("%w: more than %d archive entries", ErrTooLarge, maxEntries)
 		}
 		name := filepath.FromSlash(hdr.Name)
 		if !filepath.IsLocal(name) {

@@ -17,6 +17,8 @@ var (
 	idPattern       = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 	platformPattern = regexp.MustCompile(`^(darwin|linux)-(arm64|amd64)$`)
 	sha256Pattern   = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	// version becomes a path segment at install time (Dir/<id>/<version>).
+	versionPattern = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+-]*$`)
 )
 
 // Parse strictly decodes a catalogue document (unknown fields are errors) and validates it.
@@ -69,6 +71,14 @@ func Validate(c *Catalogue) error {
 		if e.Auth != AuthNone && e.Auth != AuthHubJWT {
 			bad("auth", "unknown value %q", e.Auth)
 		}
+		if e.Version != "" && !versionPattern.MatchString(e.Version) {
+			bad("version", "must match %s", versionPattern)
+		}
+		// docsUrl is rendered as a link in the UI: https only, so a javascript:
+		// URL in a catalogue can't become stored XSS against the control plane.
+		if e.DocsURL != "" && !httpsURL(e.DocsURL) {
+			bad("docsUrl", "must be an https:// url")
+		}
 		switch e.Kind {
 		case KindRemote:
 			validateRemote(e, bad)
@@ -84,8 +94,10 @@ func Validate(c *Catalogue) error {
 type reporter func(field, format string, args ...any)
 
 func validateRemote(e Entry, bad reporter) {
-	if u, err := url.Parse(e.URL); err != nil || u.Scheme != "https" || u.Host == "" {
-		bad("url", "remote entries need an https:// url")
+	// No userinfo: the url is served verbatim as upstreamUrl, so embedded
+	// credentials would leak to every API caller.
+	if !httpsURL(e.URL) {
+		bad("url", "remote entries need an https:// url without credentials")
 	}
 	if len(e.Artifacts) > 0 {
 		bad("artifacts", "must be empty for remote entries")
@@ -119,6 +131,12 @@ func validateLocal(e Entry, bad reporter) {
 			bad(field+".sha256", "must be 64 lowercase hex characters")
 		}
 	}
+}
+
+// httpsURL reports whether raw is an absolute https URL with a host and no userinfo.
+func httpsURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
 }
 
 func artifactURLOK(raw string) bool {
