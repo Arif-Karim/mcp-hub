@@ -134,6 +134,8 @@ a { color: var(--accent); }
 .pill--ok .dot { background: var(--ok); }
 .pill--bad { color: var(--bad); background: var(--bad-soft); border-color: transparent; font-weight: 600; }
 .pill--bad .dot { background: var(--bad); }
+.pill--warn { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.pill--warn .dot { background: var(--warn); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
 
 .tabs { display: flex; gap: 4px; margin-top: 10px; }

@@ -10,14 +10,18 @@ const events = ref<AuditEvent[]>([])
 const loading = ref(true)
 const error = ref('')
 let timer: ReturnType<typeof setInterval> | undefined
+let inFlight = false
 
 async function load() {
+  if (inFlight) return // a slow daemon must not pile up overlapping requests
+  inFlight = true
   try {
     events.value = await props.client.audit(100)
     error.value = ''
   } catch (e) {
     error.value = errorMessage(e)
   } finally {
+    inFlight = false
     loading.value = false
   }
 }
@@ -44,7 +48,7 @@ const statusClass = (s: number) => (s >= 500 ? 'bad' : s >= 400 ? 'warn' : 'ok')
 
     <p v-if="loading" class="muted" aria-busy="true">Loading activity…</p>
 
-    <div v-else-if="events.length === 0" class="empty">
+    <div v-else-if="events.length === 0 && !error" class="empty">
       <p>Tool calls made by Claude Code through mcp-hub appear here.</p>
       <p class="muted">Arguments and results are never recorded.</p>
     </div>

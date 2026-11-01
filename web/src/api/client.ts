@@ -52,7 +52,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(0, 'network', e instanceof Error ? e.message : 'network error')
   }
   if (!res.ok) throw await toApiError(res)
-  return (await res.json()) as T
+  try {
+    return (await res.json()) as T
+  } catch {
+    throw new ApiError(res.status, 'internal', 'daemon returned a response that is not JSON')
+  }
 }
 
 const enc = encodeURIComponent

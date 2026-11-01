@@ -1,16 +1,22 @@
 import { ApiError } from '../api/client'
 
-/** Maps an API failure to a sentence a developer can act on. `id` personalises a few messages. */
+/**
+ * Maps an API failure to a sentence a developer can act on. Pass `id` only for catalogue/server
+ * actions: it personalises messages and enables server-specific wording (e.g. for not_found).
+ */
 export function errorMessage(err: unknown, id?: string): string {
   if (!(err instanceof ApiError)) {
     return `Something went wrong: ${err instanceof Error ? err.message : String(err)}`
   }
   const name = id ? `hub__${id}` : 'that name'
+  if (err.status === 404 && !id) {
+    return "The daemon doesn't provide this yet (404). It may be an older mcp-hub — update it and try again."
+  }
   switch (err.code) {
     case 'not_approved':
       return 'This server is not approved for use — the platform team has to approve it first.'
     case 'checksum_mismatch':
-      return 'Download failed integrity check — install blocked. The publisher has been notified.'
+      return "Install blocked — the download didn't match the catalogue's checksum."
     case 'registry_unavailable':
       return "Couldn't reach the artifact registry. Check your network or VPN and try again."
     case 'config_conflict':

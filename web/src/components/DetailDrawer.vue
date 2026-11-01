@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { CatalogueItem } from '../api/types'
 import { authExplainer, blockedReason, cap, statusLabel } from '../lib/labels'
 import { pushToast } from '../lib/toast'
+import { safeDocsUrl } from '../lib/url'
 
 const props = defineProps<{ item: CatalogueItem; busy?: boolean; error?: string }>()
 const emit = defineEmits<{ close: []; toggle: [item: CatalogueItem] }>()
@@ -10,6 +11,7 @@ const emit = defineEmits<{ close: []; toggle: [item: CatalogueItem] }>()
 const dialog = ref<HTMLElement>()
 const closeBtn = ref<HTMLButtonElement>()
 const reason = computed(() => blockedReason[props.item.approval])
+const docsHref = computed(() => safeDocsUrl(props.item.docsUrl))
 const titleId = computed(() => `drawer-title-${props.item.id}`)
 let returnFocus: Element | null = null
 
@@ -127,8 +129,8 @@ async function copy(text: string, what: string) {
           </li>
         </ul>
 
-        <p v-if="item.docsUrl">
-          <a :href="item.docsUrl" target="_blank" rel="noopener noreferrer">Documentation ↗</a>
+        <p v-if="docsHref">
+          <a :href="docsHref" data-test="docs" target="_blank" rel="noopener noreferrer">Documentation ↗</a>
         </p>
       </div>
 
