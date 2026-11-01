@@ -1,0 +1,243 @@
+openapi: 3.0.3
+info:
+  title: mcp-hub daemon API
+  version: 0.1.0
+  description: |
+    Local control-plane API served by the `mcp-hub` daemon on 127.0.0.1.
+    Used by the web UI, the `mcp-hub` CLI and the Claude Code skill.
+
+    Not part of this API (mounted on the same listener):
+      - `/mcp/{id}`              auth-injecting MCP proxy (streamable HTTP)
+      - `/.well-known/jwks.json` public keys for the dev token issuer
+      - `/`                      embedded web UI
+servers:
+  - url: http://127.0.0.1:7420/api/v1
+paths:
+  /health:
+    get:
+      summary: Liveness check
+      operationId: getHealth
+      responses:
+        "200":
+          description: Daemon is up
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /status:
+    get:
+      summary: Daemon status for the UI header and `mcp-hub status`
+      operationId: getStatus
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+  /catalogue:
+    get:
+      summary: List catalogue entries with the caller's install state
+      operationId: listCatalogue
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive match on id, name, description, tags and tool names.
+          schema: { type: string }
+        - name: kind
+          in: query
+          schema: { $ref: "#/components/schemas/Kind" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/CatalogueItem" }
+  /catalogue/{id}:
+    get:
+      summary: Get one catalogue entry
+      operationId: getCatalogueItem
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogueItem" }
+        "404": { $ref: "#/components/responses/Error" }
+  /servers/{id}/enable:
+    post:
+      summary: Install (local) and register an MCP server in the user's Claude Code config
+      description: |
+        Idempotent. For `local` entries the artifact is downloaded, sha256-verified,
+        unpacked and started. For all entries a `hub__{id}` entry pointing at the
+        proxy is written to user-scope Claude Code config and recorded in the ledger.
+      operationId: enableServer
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Enabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogueItem" }
+        "403": { $ref: "#/components/responses/Error" } # not_approved
+        "404": { $ref: "#/components/responses/Error" } # not_found
+        "409": { $ref: "#/components/responses/Error" } # config_conflict
+        "422": { $ref: "#/components/responses/Error" } # checksum_mismatch, unsupported_platform, config_invalid
+        "502": { $ref: "#/components/responses/Error" } # registry_unavailable, start_failed
+  /servers/{id}/disable:
+    post:
+      summary: Stop and unregister an MCP server (only touches hub-owned config)
+      operationId: disableServer
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Disabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogueItem" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" } # config_invalid
+  /audit:
+    get:
+      summary: Most recent proxy audit events, newest first
+      operationId: listAudit
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditEvent" }
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-z0-9][a-z0-9-]{1,62}$" }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Kind:
+      type: string
+      enum: [local, remote]
+    Approval:
+      type: string
+      enum: [approved, pending, revoked]
+    Classification:
+      type: string
+      enum: [public, internal, confidential]
+    AuthMode:
+      type: string
+      description: "`hub-jwt`: proxy injects a short-lived JWT (audience = entry id). `none`: no credentials are sent upstream."
+      enum: [none, hub-jwt]
+    Tool:
+      type: object
+      required: [name, description]
+      properties:
+        name: { type: string }
+        description: { type: string }
+    InstallState:
+      type: object
+      required: [enabled, status, configName]
+      properties:
+        enabled: { type: boolean }
+        status:
+          type: string
+          description: "`running`/`stopped` for local servers, `ready` for enabled remotes, `disabled` when not enabled."
+          enum: [disabled, running, stopped, ready, error]
+        configName:
+          type: string
+          description: Key used in Claude Code `mcpServers`, always `hub__{id}`.
+          example: hub__service-directory
+        proxyUrl: { type: string, example: "http://127.0.0.1:7420/mcp/service-directory" }
+        enabledAt: { type: string, format: date-time }
+        lastError: { type: string }
+    CatalogueItem:
+      type: object
+      required: [id, name, description, owner, version, kind, classification, approval, auth, tools, tags, state]
+      properties:
+        id: { type: string, example: service-directory }
+        name: { type: string, example: Service Directory }
+        description: { type: string }
+        owner: { type: string, example: platform-engineering }
+        version: { type: string, example: 0.1.0 }
+        kind: { $ref: "#/components/schemas/Kind" }
+        classification: { $ref: "#/components/schemas/Classification" }
+        approval: { $ref: "#/components/schemas/Approval" }
+        auth: { $ref: "#/components/schemas/AuthMode" }
+        tags: { type: array, items: { type: string } }
+        tools: { type: array, items: { $ref: "#/components/schemas/Tool" } }
+        docsUrl: { type: string }
+        upstreamUrl:
+          type: string
+          description: Remote entries only.
+        state: { $ref: "#/components/schemas/InstallState" }
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status: { type: string, enum: [ok] }
+        version: { type: string }
+    Status:
+      type: object
+      required: [version, addr, claudeConfigPath, enabledCount, catalogueSource, user]
+      properties:
+        version: { type: string }
+        addr: { type: string, example: "127.0.0.1:7420" }
+        claudeConfigPath: { type: string, example: "/Users/dev/.claude.json" }
+        enabledCount: { type: integer }
+        catalogueSource: { type: string, example: embedded }
+        user: { type: string, description: Subject placed in issued tokens. }
+    AuditEvent:
+      type: object
+      description: One proxied MCP request. Tool arguments and results are never recorded.
+      required: [time, server, method, status, durationMs, user]
+      properties:
+        time: { type: string, format: date-time }
+        server: { type: string }
+        method: { type: string, example: tools/call }
+        tool: { type: string, example: find_service }
+        status: { type: integer, description: Upstream HTTP status (or 502 if unreachable). }
+        durationMs: { type: integer }
+        user: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - not_found
+                - not_approved
+                - checksum_mismatch
+                - unsupported_platform
+                - registry_unavailable
+                - start_failed
+                - config_conflict
+                - config_invalid
+                - bad_request
+                - internal
+            message: { type: string }
