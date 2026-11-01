@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
+	"github.com/Arif-Karim/mcp-hub/internal/audit"
 	"github.com/Arif-Karim/mcp-hub/internal/httpx"
 )
 
@@ -18,6 +19,12 @@ type Options struct {
 	Catalogue *catalogue.Store
 	// State reports an entry's install state. Nil reports every entry disabled.
 	State func(id string) catalogue.InstallState
+	// Proxy serves /mcp/{id}[/...] (lane C). Nil disables it.
+	Proxy http.Handler
+	// JWKS serves GET /.well-known/jwks.json (lane C). Nil disables it.
+	JWKS http.Handler
+	// Audit backs GET /api/v1/audit (lane C). Nil disables it.
+	Audit *audit.Log
 }
 
 // New returns the root handler.
@@ -33,6 +40,7 @@ func New(opts Options) http.Handler {
 	if opts.Catalogue != nil {
 		registerCatalogue(mux, opts.Catalogue, opts.State)
 	}
+	registerLaneC(mux, opts)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "no such API route")
 	})
@@ -46,4 +54,17 @@ func New(opts Options) http.Handler {
 func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Allow", "GET, HEAD")
 	httpx.WriteError(w, http.StatusMethodNotAllowed, httpx.CodeBadRequest, "method not allowed")
+}
+
+func registerLaneC(mux *http.ServeMux, opts Options) {
+	if opts.Proxy != nil {
+		mux.Handle("/mcp/", opts.Proxy)
+	}
+	if opts.JWKS != nil {
+		mux.Handle("GET /.well-known/jwks.json", opts.JWKS)
+	}
+	if opts.Audit != nil {
+		mux.Handle("GET /api/v1/audit", audit.Handler(opts.Audit))
+		mux.HandleFunc("/api/v1/audit", methodNotAllowed)
+	}
 }
