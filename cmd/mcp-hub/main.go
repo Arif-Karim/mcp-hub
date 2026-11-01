@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
 	"github.com/Arif-Karim/mcp-hub/internal/server"
 	"github.com/Arif-Karim/mcp-hub/internal/version"
 	"github.com/Arif-Karim/mcp-hub/internal/webui"
@@ -53,12 +54,21 @@ func serve(args []string) error {
 		return err
 	}
 
+	cat, err := loadCatalogue()
+	if err != nil {
+		return err
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
 
 	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           server.New(server.Options{Version: version.Version, UI: webui.Handler()}),
+		Addr: *addr,
+		Handler: server.New(server.Options{
+			Version:   version.Version,
+			UI:        webui.Handler(),
+			Catalogue: cat,
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -94,6 +104,20 @@ func requireLoopback(addr string) error {
 		return fmt.Errorf("refusing to listen on non-loopback address %q", addr)
 	}
 	return nil
+}
+
+// loadCatalogue returns the embedded catalogue, or the file named by
+// MCP_HUB_CATALOGUE. An invalid catalogue stops startup with every problem listed.
+func loadCatalogue() (*catalogue.Store, error) {
+	path := os.Getenv("MCP_HUB_CATALOGUE")
+	if path == "" {
+		return catalogue.Default()
+	}
+	s, err := catalogue.Load(path)
+	if err != nil {
+		return nil, fmt.Errorf("catalogue %s:\n%w", path, err)
+	}
+	return s, nil
 }
 
 func envOr(key, def string) string {
