@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -114,6 +115,19 @@ func TestInstallWritesEverySkill(t *testing.T) {
 	}
 	if got, want := skillfiles.SkillsDir(dir), filepath.Join(dir, "skills"); got != want {
 		t.Errorf("SkillsDir = %q, want %q", got, want)
+	}
+}
+
+// install.sh --uninstall removes skills by name after the binary is gone, so its list must match.
+func TestInstallShUninstallsEverySkill(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "install.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "SKILLS=(" + strings.Join(wantSkills, " ") + ")\n"
+	if !strings.Contains(string(b), want) {
+		t.Fatalf("install.sh must declare %q", want)
 	}
 }
 

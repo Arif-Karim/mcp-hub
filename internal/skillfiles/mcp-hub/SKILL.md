@@ -10,6 +10,9 @@ allowed-tools: Bash(mcp-hub search:*), Bash(mcp-hub info:*), Bash(mcp-hub status
 governance approved, verifies artifacts, injects short-lived credentials and audits every call.
 Never edit `~/.claude.json` or run `claude mcp add` yourself to work around it.
 
+To build your own MCP server, use the `mcp-hub-build-server` skill; to publish one to the catalogue, use the
+`mcp-hub-publish-server` skill.
+
 ## Find servers
 
 1. Run `mcp-hub search <a few keywords> --json` (omit keywords to list everything; add `--kind local|remote` if asked).

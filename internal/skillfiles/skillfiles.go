@@ -1,24 +1,38 @@
-// Package skillfiles carries the mcp-hub Claude Code skill inside the binary
-// and installs it into the user's Claude Code skills directory, so a
-// developer gets the skill from `mcp-hub install-skill` or the web UI without
-// a separate download. mcp-hub/SKILL.md here is the only copy in the repo.
+// Package skillfiles carries mcp-hub's Claude Code skills inside the binary
+// and installs them into the user's Claude Code skills directory, so a
+// developer gets them from `mcp-hub install-skill` or the web UI without a
+// separate download. Each <name>/SKILL.md here is the only copy in the repo:
+// mcp-hub (find and enable servers), mcp-hub-build-server and
+// mcp-hub-publish-server (build and publish your own server).
 package skillfiles
 
 import (
 	"bytes"
-	_ "embed"
+	"embed"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 )
 
-//go:embed mcp-hub/SKILL.md
-var skillMD []byte
+//go:embed */SKILL.md
+var embedded embed.FS
+
+// mainSkill is the skill whose path the SkillStatus contract reports.
+const mainSkill = "mcp-hub"
 
 const (
 	dirMode  = 0o755
 	fileMode = 0o644
 )
+
+// Skill is one embedded Claude Code skill.
+type Skill struct {
+	Name    string // directory name; matches the frontmatter name
+	Content []byte
+}
 
 // State is the contract's SkillStatus schema.
 type State struct {
@@ -27,8 +41,42 @@ type State struct {
 	Path      string `json:"path"`
 }
 
-// Content returns the embedded SKILL.md.
-func Content() []byte { return bytes.Clone(skillMD) }
+var skills = loadSkills(embedded)
+
+func loadSkills(fsys fs.FS) []Skill {
+	files, err := fs.Glob(fsys, "*/SKILL.md")
+	if err != nil {
+		panic(err) // constant, valid pattern
+	}
+	out := make([]Skill, 0, len(files))
+	for _, p := range files {
+		b, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			panic(err) // embedded at build time
+		}
+		out = append(out, Skill{Name: path.Dir(p), Content: b})
+	}
+	// Main skill first, then the rest by name.
+	sort.SliceStable(out, func(i, j int) bool {
+		if mi, mj := out[i].Name == mainSkill, out[j].Name == mainSkill; mi != mj {
+			return mi
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+// Skills returns every embedded skill, the main mcp-hub skill first.
+func Skills() []Skill {
+	out := make([]Skill, len(skills))
+	for i, s := range skills {
+		out[i] = Skill{Name: s.Name, Content: bytes.Clone(s.Content)}
+	}
+	return out
+}
+
+// Content returns the embedded main mcp-hub SKILL.md.
+func Content() []byte { return bytes.Clone(skills[0].Content) }
 
 // DefaultClaudeDir is $CLAUDE_HOME_DIR (mcp-hub override), else Claude Code's
 // own $CLAUDE_CONFIG_DIR, else ~/.claude. Relative paths are rejected: under
@@ -49,15 +97,30 @@ func DefaultClaudeDir() (string, error) {
 	return filepath.Join(home, ".claude"), nil
 }
 
-// Path is where the skill lives under claudeDir.
-func Path(claudeDir string) string {
-	return filepath.Join(claudeDir, "skills", "mcp-hub", "SKILL.md")
+// SkillsDir is Claude Code's user skills directory under claudeDir.
+func SkillsDir(claudeDir string) string { return filepath.Join(claudeDir, "skills") }
+
+// SkillPath is where the named skill lives under claudeDir.
+func SkillPath(claudeDir, name string) string {
+	return filepath.Join(SkillsDir(claudeDir), name, "SKILL.md")
 }
 
-// Install writes the embedded skill to Path(claudeDir), replacing any older
-// copy atomically (temp file + rename) so Claude Code never reads half a file.
+// Path is where the main mcp-hub skill lives under claudeDir.
+func Path(claudeDir string) string { return SkillPath(claudeDir, mainSkill) }
+
+// Install writes every embedded skill under SkillsDir(claudeDir).
 func Install(claudeDir string) error {
-	target := Path(claudeDir)
+	for _, s := range skills {
+		if err := installOne(SkillPath(claudeDir, s.Name), s.Content); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// installOne replaces target atomically (temp file + rename) so Claude Code
+// never reads half a file, and a symlink at target is replaced, not followed.
+func installOne(target string, content []byte) error {
 	dir := filepath.Dir(target)
 	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return err
@@ -67,7 +130,7 @@ func Install(claudeDir string) error {
 		return err
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }() // no-op after a successful rename
-	if _, err := tmp.Write(skillMD); err != nil {
+	if _, err := tmp.Write(content); err != nil {
 		_ = tmp.Close()
 		return err
 	}
@@ -88,25 +151,30 @@ func Install(claudeDir string) error {
 	return nil
 }
 
-// Status reports whether the skill is installed and matches the embedded copy.
+// Status reports whether every skill is installed, and whether every copy
+// matches the embedded one. Any missing skill means not installed.
 func Status(claudeDir string) (installed, upToDate bool) {
-	got, err := os.ReadFile(Path(claudeDir))
-	if err != nil {
-		return false, false
+	upToDate = true
+	for _, s := range skills {
+		got, err := os.ReadFile(SkillPath(claudeDir, s.Name))
+		if err != nil {
+			return false, false
+		}
+		upToDate = upToDate && bytes.Equal(got, s.Content)
 	}
-	return true, bytes.Equal(got, skillMD)
+	return true, upToDate
 }
 
 // Manager binds the functions above to one Claude directory (for the daemon).
 type Manager struct{ ClaudeDir string }
 
-// State reports the skill's install state.
+// State reports the skills' install state; Path is the main skill's path.
 func (m Manager) State() State {
 	installed, upToDate := Status(m.ClaudeDir)
 	return State{Installed: installed, UpToDate: upToDate, Path: Path(m.ClaudeDir)}
 }
 
-// Install installs the skill and returns the new state.
+// Install installs every skill and returns the new state.
 func (m Manager) Install() (State, error) {
 	if err := Install(m.ClaudeDir); err != nil {
 		return State{}, err

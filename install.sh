@@ -25,7 +25,9 @@ BIN_DIR="${HOME}/.local/bin"
 BIN="${BIN_DIR}/mcp-hub"
 # Same order as `mcp-hub install-skill`: mcp-hub override, then Claude Code's own CLAUDE_CONFIG_DIR.
 CLAUDE_DIR="${CLAUDE_HOME_DIR:-${CLAUDE_CONFIG_DIR:-${HOME}/.claude}}"
-SKILL_DIR="${CLAUDE_DIR}/skills/mcp-hub"
+SKILLS_DIR="${CLAUDE_DIR}/skills"
+# Must match the skills embedded in internal/skillfiles (mcp-hub install-skill writes them all).
+SKILLS=(mcp-hub mcp-hub-build-server mcp-hub-publish-server)
 HUB_HOME="${MCP_HUB_HOME:-${HOME}/.mcp-hub}"
 LOG_DIR="${HUB_HOME}/logs"
 PID_FILE="${HUB_HOME}/daemon.pid"
@@ -308,7 +310,10 @@ uninstall() {
     rm -f "$BIN"
     log "removed ${BIN}"
   fi
-  if [[ -d "$SKILL_DIR" ]]; then rm -rf "$SKILL_DIR"; log "removed ${SKILL_DIR}"; fi
+  for skill in "${SKILLS[@]}"; do
+    dir="${SKILLS_DIR}/${skill}"
+    if [[ -d "$dir" ]]; then rm -rf "$dir"; log "removed ${dir}"; fi
+  done
   if [[ "$PURGE" == "1" ]]; then
     case "$HUB_HOME" in
       ""|"/"|"$HOME"|"$HOME/") die "refusing to purge ${HUB_HOME}" ;;
