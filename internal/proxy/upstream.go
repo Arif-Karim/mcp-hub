@@ -46,6 +46,15 @@ func (h *handler) reverseProxy(id string, target *url.URL, rest, authz string, s
 				sw.auditStatus = resp.StatusCode
 				return errUpstreamAuth
 			}
+			if resp.StatusCode == http.StatusAccepted && resp.Header.Get("Content-Type") == "" {
+				// MCP answers notifications with 202 and no content; servers may
+				// send it chunked. Drop any body rather than forward it untyped.
+				_ = resp.Body.Close()
+				resp.Body, resp.ContentLength = http.NoBody, 0
+				resp.TransferEncoding = nil
+				resp.Header.Del("Content-Length")
+				return nil
+			}
 			if !allowedContentType(resp) {
 				return errContentType
 			}
