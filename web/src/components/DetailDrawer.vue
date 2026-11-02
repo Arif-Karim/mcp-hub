@@ -113,7 +113,7 @@ async function copy(text: string, what: string) {
               </dd>
             </template>
           </dl>
-          <p class="note">Restart Claude Code or run <code>/mcp</code> to pick up new servers.</p>
+          <p class="note">Run <code>/reload-plugins</code> in Claude Code (or restart it) to load the new server.</p>
         </section>
 
         <h3>Authentication</h3>
