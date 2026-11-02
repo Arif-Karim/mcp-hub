@@ -85,6 +85,38 @@ func TestEmptyBodyWithoutContentTypeIsAllowed(t *testing.T) {
 	}
 }
 
+// MCP notifications are answered with 202 and no body. Some servers (e.g.
+// Context7) send that chunked, so the length is unknown rather than zero.
+func TestAcceptedWithoutContentTypeIsAllowedWhenChunked(t *testing.T) {
+	up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		w.(http.Flusher).Flush() // forces chunked encoding: no Content-Length
+	})
+	f := newFixture(t, resolver{"svc-a": {URL: up.URL, Auth: catalogue.AuthNone}}, nil)
+	if rec := serve(f.h, req(http.MethodPost, "/mcp/svc-a", callBody)); rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", rec.Code)
+	}
+}
+
+// A 202 carries no content per the MCP spec, so any untyped body is dropped
+// rather than forwarded.
+func TestAcceptedUntypedBodyIsDropped(t *testing.T) {
+	up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header()["Content-Type"] = nil
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = io.WriteString(w, "<script>alert(1)</script>")
+	})
+	f := newFixture(t, resolver{"svc-a": {URL: up.URL, Auth: catalogue.AuthNone}}, nil)
+	rec := serve(f.h, req(http.MethodPost, "/mcp/svc-a", callBody))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("body = %q, want empty", rec.Body.String())
+	}
+	assertSecurityHeaders(t, rec.Header())
+}
+
 func TestUpstreamAuthRejectionIsMappedTo502(t *testing.T) {
 	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
