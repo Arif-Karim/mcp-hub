@@ -10,7 +10,9 @@ Guardrails written into the skill:
 - only `approved` entries are offered for enabling; `pending`/`revoked` are explained, never attempted;
 - the user confirms before any enable or disable;
 - errors (`checksum_mismatch`, `config_conflict`, daemon down, ...) are explained in plain words;
-- `allowed-tools: Bash(mcp-hub:*)` limits the skill to the `mcp-hub` command.
+- `allowed-tools` pre-approves only the read-only commands (`mcp-hub search`, `info`, `status`).
+  `mcp-hub enable` and `disable` change the user's Claude Code config, so they still go through Claude Code's
+  own permission prompt. The confirmation does not depend only on the model following the skill's instructions.
 
 ## Install
 

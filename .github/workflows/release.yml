@@ -58,18 +58,18 @@ jobs:
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
+      # No caches in the release build: Actions caches are shared with other workflows
+      # (including PR builds), so a poisoned cache could otherwise end up in release artifacts.
+      # Modules are verified against go.sum / package-lock.json on a clean download instead.
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: |
-            go.sum
-            tools/go.sum
+          cache: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          package-manager-cache: false
 
       - name: test
         run: go test -race ./...

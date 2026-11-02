@@ -188,9 +188,15 @@ xml_escape() {
   printf '%s' "$s"
 }
 
+agent_loaded() { launchctl print "gui/$(id -u)/${LABEL}" >/dev/null 2>&1; }
+
 stop_daemon() {
-  if [[ "$OS" == "darwin" ]] && launchctl print "gui/$(id -u)/${LABEL}" >/dev/null 2>&1; then
+  if [[ "$OS" == "darwin" ]] && agent_loaded; then
     launchctl bootout "gui/$(id -u)/${LABEL}" 2>/dev/null || true
+    # bootout returns before launchd has fully removed the service; bootstrapping
+    # too early fails with "Bootstrap failed: 5". Wait for it to go (bounded: 5s).
+    local _
+    for _ in $(seq 1 10); do agent_loaded || break; sleep 0.5; done
     log "stopped LaunchAgent ${LABEL}"
   fi
   if [[ -f "$PID_FILE" ]]; then
@@ -241,11 +247,18 @@ start_daemon() {
 </plist>
 EOF
     chmod 644 "$PLIST"
-    launchctl bootstrap "gui/$(id -u)" "$PLIST" || die "launchctl bootstrap failed; see ${LOG_DIR}/daemon.log"
+    if ! launchctl bootstrap "gui/$(id -u)" "$PLIST"; then
+      # Error 5 (I/O error) usually means the previous instance was still being torn down: retry once.
+      warn "launchctl bootstrap failed; retrying once"
+      sleep 2
+      launchctl bootstrap "gui/$(id -u)" "$PLIST" || die "launchctl bootstrap failed; see ${LOG_DIR}/daemon.log"
+    fi
     # launchd may defer a RunAtLoad spawn; start it now.
     launchctl kickstart "gui/$(id -u)/${LABEL}" || warn "launchctl kickstart failed; the daemon will start at next login"
     log "LaunchAgent ${LABEL} loaded (starts at login, restarts if it exits)"
   else
+    # A plist left by an earlier launchd install would start a second daemon at next login.
+    if [[ -f "$PLIST" ]]; then rm -f "$PLIST"; log "removed old ${PLIST} (--no-launchd)"; fi
     MCP_HUB_HOME="$HUB_HOME" MCP_HUB_ADDR="$ADDR" nohup "$BIN" serve >>"$LOG_DIR/daemon.log" 2>&1 &
     echo $! > "$PID_FILE"
     log "daemon started in the background (pid $!, --no-launchd)"

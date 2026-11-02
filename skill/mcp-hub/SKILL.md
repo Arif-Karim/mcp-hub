@@ -1,7 +1,7 @@
 ---
 name: mcp-hub
 description: Find, enable and disable approved MCP servers from the company's governed mcp-hub catalogue. Use when the user asks to find, get, install, add or connect an MCP server or tool, wants to connect Claude to an internal system (service directory, Jira, payments, docs, ...), asks what MCP servers are available or which ones they have enabled, or wants to remove/disable one.
-allowed-tools: Bash(mcp-hub:*)
+allowed-tools: Bash(mcp-hub search:*), Bash(mcp-hub info:*), Bash(mcp-hub status:*)
 ---
 
 # mcp-hub: governed MCP servers for Claude Code
@@ -28,7 +28,8 @@ Point out `confidential` classification so the user knows what data it can retur
 ## Enable
 
 1. **Ask the user to confirm** the exact server (name + id) before enabling. Never enable without a yes.
-2. Run `mcp-hub enable <id> --json`.
+2. Run `mcp-hub enable <id> --json`. Claude Code will also show its own permission prompt for this command
+   (the skill pre-approves only the read-only commands); that is expected.
 3. On success tell them it was added as `hub__<id>` and that they must **run `/mcp` or restart Claude Code** to load it.
 
 ## What do I have enabled?
