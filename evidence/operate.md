@@ -6,7 +6,7 @@ How a developer (and the platform team supporting them) runs, debugs, rolls back
 
 | What | How |
 |---|---|
-| Install / upgrade | `curl -fsSL https://raw.githubusercontent.com/Arif-Karim/mcp-hub/main/install.sh \| bash` (re-run to upgrade in place) |
+| Install / upgrade | `curl -fsSL https://raw.githubusercontent.com/Arif-Karim/mcp-hub/main/install.sh \| bash` (re-run to upgrade in place; needs a published `v*` release, otherwise use `--local-artifact`) |
 | Daemon | Per-user LaunchAgent `~/Library/LaunchAgents/com.mcp-hub.daemon.plist`: RunAtLoad and KeepAlive, listens on `127.0.0.1:7420` (loopback only) |
 | Restart daemon | `launchctl kickstart -k gui/$(id -u)/com.mcp-hub.daemon` |
 | Stop daemon | `launchctl bootout gui/$(id -u)/com.mcp-hub.daemon` (`install.sh` loads it again) |
@@ -19,10 +19,17 @@ How a developer (and the platform team supporting them) runs, debugs, rolls back
 
 - `~/.mcp-hub/logs/daemon.log`: daemon stdout/stderr as JSON lines (`log/slog`). Tokens, Authorization headers,
   tool arguments and tool results are never logged.
+- `~/.mcp-hub/logs/<id>.log`: stdout/stderr of each local MCP server (0600). A failed start returns its tail in the error.
 - `~/.mcp-hub/audit.jsonl`: one line per proxied MCP request (time, server, method, tool, status, duration, user).
-  It never records arguments or results. The UI's Audit view and `GET /api/v1/audit` read it.
+  It never records arguments or results. The UI's **Activity** tab and `GET /api/v1/audit` read it.
 - `~/.mcp-hub/state.json`: the ledger of the `hub__*` entries mcp-hub wrote to `~/.claude.json`. `~/.mcp-hub/backups/`
   holds rotated copies of `~/.claude.json` taken before each edit.
+
+## After enabling or disabling
+
+Claude Code reads MCP servers when it loads, so a newly enabled server's tools appear only after **`/reload-plugins`
+(or restarting Claude Code)**. Check with `/mcp`: enabled servers are listed as `hub__<id>`. The same applies after a
+disable. A single gateway entry would remove this step (decisions.md ADR 4).
 
 ## Config and secrets
 
@@ -47,7 +54,9 @@ How a developer (and the platform team supporting them) runs, debugs, rolls back
 | `enable` → `config_conflict` | the user already has their own `hub__<id>` entry, or edited ours | mcp-hub will not overwrite it. Remove or rename the entry, then retry |
 | `enable` → `config_invalid` | `~/.claude.json` is not valid JSON | mcp-hub does not write to it. Fix the file, or restore from `~/.mcp-hub/backups/` |
 | `enable` → `registry_unavailable` / `start_failed` | network or registry outage, or the server crashed on start | retry. The `state.lastError` field (`mcp-hub info <id>`) has details |
-| Tool calls fail after a revoke | the catalogue revoked the entry | `mcp-hub disable <id>`, then restart Claude Code (`/reload-plugins` does not remove servers) |
+| Enabled, but Claude Code doesn't show the tools | Claude Code has not reloaded its MCP config | `/reload-plugins` or restart Claude Code; `/mcp` should list `hub__<id>` |
+| `enable` → `start_failed` for a local server | the server crashed or never answered `/healthz` | read `~/.mcp-hub/logs/<id>.log` |
+| Tool calls fail after a revoke | the catalogue revoked the entry; the daemon auto-disables it on its next start | `mcp-hub disable <id>` now, then `/reload-plugins` |
 | Uninstall prints `Kept hub__x` | the user edited that entry | kept on purpose; remove it by hand if you no longer want it |
 
 ## Rollback
