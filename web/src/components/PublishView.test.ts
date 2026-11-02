@@ -16,6 +16,13 @@ describe('PublishView', () => {
     expect(steps[4].text()).toMatch(/approved/i)
   })
 
+  it('points to the Claude Code skills near the top', () => {
+    const callout = mount(PublishView).get('.publish__intro [data-test=ask-claude]')
+    expect(callout.text()).toContain('Or just ask Claude Code')
+    expect(callout.text()).toContain("help me build an MCP server for my team's service")
+    expect(callout.text()).toContain('the mcp-hub skills walk you through building and publishing')
+  })
+
   it('compares local and remote servers', () => {
     const rows = mount(PublishView).findAll('[data-test=kinds] tbody tr')
     expect(rows.map((r) => r.get('th').text())).toEqual(['Local', 'Remote'])
