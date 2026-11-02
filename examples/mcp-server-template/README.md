@@ -4,6 +4,8 @@ This directory is **the standard**: a small, working MCP server (`service-direct
 that mcp-hub can install, start and front. Copy it, replace the tools in
 `internal/directory`, keep everything else.
 
+To release it and add it to the catalogue, see [docs/publishing.md](../../docs/publishing.md).
+
 All data here is synthetic (fictional services, `example.test` identities).
 
 ## The standard
