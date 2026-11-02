@@ -151,5 +151,5 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
 - `verify.sh --mutation` (gremlins, timeout coefficient 20): cmd/mcp-hub 18/0, daemon 9/0, hub 35/0, server 25/0 (all
   100%); runner 21 killed / 5 lived / 2 timed out → 80.8%. Runner survivors are timing boundaries (log-tail size cut,
   default-timeout `> 0` checks, poll interval) that change no observable outcome within the test timeouts. Total
-  coverage 92.8%. The e2e test (real example server + MCP SDK client) passed 3× under `-race`; it skips until lane E's
-  `examples/` is merged.
+  coverage 92.8%. The e2e test (real example server + MCP SDK client) passed 3× under `-race` and now runs in `verify.sh` (lane E
+  merged); it skips only with `-short` or if `examples/` is absent.
