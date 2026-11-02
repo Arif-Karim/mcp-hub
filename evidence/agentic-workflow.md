@@ -71,3 +71,24 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   CSRF on state-changing routes). Also: no hub token over plaintext http to remote hosts, upstream 401/403 →
   502 without `WWW-Authenticate`, 499 for client disconnects, audit write-error counter, key-read TOCTOU check.
   Lesson: proxying third-party bytes onto a privileged origin needs response-side controls, not just request-side.
+
+### Lane D (Claude Code config writer + ledger)
+- Builder subagent, single worktree, branch `lane-d-claude-config`. Red commit specified 20+ behaviours first
+  (preserve unrelated keys, invalid file untouched, ownership conflicts, symlinks, mode, backups, lost-update guard, id validation).
+- Green surfaced one wrong test, not wrong code: "Claude Code creates the file mid-write" expected a conflict, but the
+  re-read-and-re-apply path correctly merged into the new file. Test changed to assert the merge (noted in the commit).
+- Lint (revive) caught shadowing the `real` builtin; renamed.
+- Mutation: 62 killed / 6 lived (91% efficacy). Survivors are fsync/dir-sync/close error branches and an `attempt++`→`--`
+  mutant that yields identical retry behaviour — accepted as equivalent rather than adding fault-injection seams.
+- Tests use `t.TempDir()` for config, ledger and backups and set `HOME` to a temp dir for `DefaultPaths`; the real
+  `~/.claude.json` is never read or written.
+- Review round (PR #4, one batched review): must-fix was a real data-loss path — a failed concurrent-change retry left
+  the ledger claiming a user-created `hub__x`, so a later Remove would delete it. Reproduced as a red regression test,
+  fixed with a single deferred ledger restore. The same round added a cross-process `flock`, `PrevHash` for crash-safe
+  URL changes, a typed `PartialRemoveError`, and `O_EXCL` + fsync backups.
+- The new frozen-clock backup test caught a second bug in the first fix attempt: after pruning, the unsuffixed name was
+  reused and sorted *first*, so the newest backup got pruned next. Fixed by always naming a backup to sort after the newest.
+- Mutation after review: `verify.sh --mutation` reported 77 killed / 0 lived / **21 timed out** (100%) under load —
+  not trusted. Re-ran single-worker: 88 killed / 8 lived / 2 timed out → **91.7%**. The 2 timeouts are negated
+  lock-error checks (deadlock = detected); the 8 survivors are unobservable fsync/close/chmod/rename/dir-sync error
+  branches plus the equivalent retry-counter mutant.

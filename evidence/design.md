@@ -39,3 +39,39 @@ _To be completed during the build._
   would perform OAuth 2.0 token exchange (RFC 8693) of the developer's SSO session for a per-server audience
   token, keys would live in an HSM/KMS with rotation (JWKS already supports multiple keys by `kid`), and audit
   events would ship to the SIEM rather than a local file.
+
+## Claude config safety
+
+`internal/claudeconfig` is the only code that writes `~/.claude.json` (path: `CLAUDE_CONFIG_PATH`, default `~/.claude.json`).
+
+- **Marker + ledger.** Entries are named `hub__<id>`; `~/.mcp-hub/state.json` (`{"version":1,"servers":{id:{...}}}`,
+  0600, dir 0700) records each one with a sha256 of its canonical JSON (sorted keys, compact — so Claude Code
+  re-serialising the file is not mistaken for an edit). Ids must match `^[a-z0-9][a-z0-9-]{1,62}$`.
+- **Conflict rules (`ErrConfigConflict` → `config_conflict`).** Add/Remove refuse a `hub__<id>` that is not in the
+  ledger (the user made it) or whose hash differs from the ledger (the user edited it). Re-adding an unchanged owned
+  entry is a no-op. Remove of an owned entry already gone just drops the ledger record. `RemoveAll` (uninstall) removes
+  every clean owned entry in one write and returns `*PartialRemoveError{Skipped}` (unwraps to `ErrConfigConflict`)
+  listing the edited ones it left behind. Non-`hub__` keys are never touched.
+- **Invalid input (`ErrConfigInvalid` → `config_invalid`).** Unparseable JSON, non-object top level, or a non-object /
+  null `mcpServers` → error, nothing written (file bytes, ledger and backups unchanged).
+- **Preservation.** Both levels decode into `map[string]json.RawMessage`, so values we do not own pass through
+  (no HTML escaping, numbers untouched). Key order is not preserved; output is 2-space indented like Claude Code.
+- **Atomic write.** Backup current bytes to `~/.mcp-hub/backups/claude.json.<UTC ns timestamp>[-NNN]` (0600, `O_EXCL`,
+  fsync'd, named to sort after the newest even if the clock repeats; newest 5 kept; only files matching that exact layout
+  are pruned), write a temp file in the target's directory, fsync, keep the original mode (new file 0600) and owner
+  (best effort, so `sudo` cannot leave it root-owned), rename, fsync the dir.
+  A symlinked `~/.claude.json` is resolved and the real file replaced, so the link survives; a dangling link is an error.
+- **Lost-update guard.** Immediately before rename the file is re-read and compared to the bytes we parsed. If it changed,
+  the edit is re-applied once on the fresh content; if it changed again we return `ErrConfigConflict` ("retry").
+  An in-process mutex plus an exclusive advisory `flock` on `<MCP_HUB_HOME>/claudeconfig.lock` (0600, unix) serialise
+  every read-modify-write across the daemon and the CLI.
+- **Ledger ordering (ledger → config → ledger).** Before the config write the ledger is saved as old ∪ new, where a
+  record that replaces an existing entry carries `PrevHash` (the hash it replaces). After the rename the ledger is saved
+  as new, and `PrevHash` is cleared once the config entry matches `Hash`. Any error before the rename lands restores the
+  previous ledger (one deferred restore), so a failed call never claims an entry it did not write (PR #4 review must-fix:
+  previously a failed retry could leave the ledger claiming a user-created `hub__x`, which a later Remove would delete).
+  A crash leaves the ledger claiming an entry that is absent or still at `PrevHash`; both count as ours, so the next call
+  self-heals. Config-first ordering was rejected: a crash would leave an unrecorded `hub__` entry locked as "user-owned".
+- **Known gap.** There is no lock shared with Claude Code itself (its own locking, if any, is not a published contract), so a write landing
+  between our re-check and `rename` can still be lost. The window is microseconds and mitigated by the re-check plus
+  the backups; it cannot be closed from outside Claude Code.
