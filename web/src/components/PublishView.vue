@@ -24,6 +24,12 @@ async function copy() {
         Put your service’s tools in every engineer’s Claude Code. Local servers get a short-lived, identity-aware token from
         the hub, so no secrets go in anyone’s config, and your API keeps its own access control.
       </p>
+      <p class="callout" data-test="ask-claude">
+        <span>
+          Or just ask Claude Code: <q>help me build an MCP server for my team's service</q> — the mcp-hub skills walk
+          you through building and publishing.
+        </span>
+      </p>
       <p class="publish__links">
         <a :href="GUIDE_URL" target="_blank" rel="noopener noreferrer" data-test="guide-link">Full publishing guide ↗</a>
         <a :href="TEMPLATE_URL" target="_blank" rel="noopener noreferrer" data-test="template-link">Server template ↗</a>
