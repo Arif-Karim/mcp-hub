@@ -39,6 +39,8 @@ type Env struct {
 	Addr           string // daemon host:port; empty means DefaultAddr
 	// Config opens the Claude config writer and returns the config path (for messages).
 	Config func() (ConfigRemover, string, error)
+	// ClaudeDir returns the Claude Code directory (~/.claude) install-skill writes into.
+	ClaudeDir func() (string, error)
 }
 
 // DefaultEnv wires the process environment.

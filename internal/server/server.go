@@ -29,6 +29,8 @@ type Options struct {
 	Servers Enabler
 	// Status backs GET /api/v1/status. Nil disables it.
 	Status func() Status
+	// Skill backs POST /api/v1/skill/install. Nil disables it.
+	Skill Skill
 }
 
 // New returns the root handler.

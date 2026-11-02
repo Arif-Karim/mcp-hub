@@ -125,7 +125,7 @@ func mustContain(t *testing.T, got string, wants ...string) {
 }
 
 func TestHandles(t *testing.T) {
-	for _, c := range []string{"search", "info", "enable", "disable", "status", "uninstall-config", "help"} {
+	for _, c := range []string{"search", "info", "enable", "disable", "status", "uninstall-config", "install-skill", "help"} {
 		if !Handles(c) {
 			t.Errorf("Handles(%q) = false", c)
 		}
@@ -280,7 +280,7 @@ func TestEnableSuccess(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("code %d %s", r.code, r.stderr)
 	}
-	mustContain(t, r.stdout, "hub__service-directory", "Restart Claude Code or run /mcp to load it.",
+	mustContain(t, r.stdout, "hub__service-directory", "Run /reload-plugins in Claude Code (or restart it) to load the new server.",
 		"http://127.0.0.1:7420/mcp/service-directory")
 	if got := f.requests(); got[0] != "POST /api/v1/servers/service-directory/enable" {
 		t.Errorf("request = %v", got)
@@ -293,7 +293,8 @@ func TestDisableSuccess(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("code %d %s", r.code, r.stderr)
 	}
-	mustContain(t, r.stdout, "Disabled", "hub__service-directory", "Restart Claude Code or run /mcp")
+	mustContain(t, r.stdout, "Disabled", "hub__service-directory",
+		"Run /reload-plugins in Claude Code (or restart it) to unload the server.")
 	if got := f.requests(); got[0] != "POST /api/v1/servers/service-directory/disable" {
 		t.Errorf("request = %v", got)
 	}
@@ -408,6 +409,7 @@ func TestDefaultEnv(t *testing.T) {
 	t.Setenv("MCP_HUB_ADDR", "127.0.0.1:9999")
 	t.Setenv("MCP_HUB_HOME", filepath.Join(home, "hub"))
 	t.Setenv("CLAUDE_CONFIG_PATH", filepath.Join(home, "claude.json"))
+	t.Setenv("CLAUDE_HOME_DIR", filepath.Join(home, "cl"))
 	env := DefaultEnv()
 	if env.Addr != "127.0.0.1:9999" || env.Stdout == nil || env.Stderr == nil {
 		t.Fatalf("DefaultEnv = %+v", env)
@@ -418,6 +420,9 @@ func TestDefaultEnv(t *testing.T) {
 	}
 	if _, err := cfg.Owned(); err != nil {
 		t.Fatalf("Owned on empty temp home: %v", err)
+	}
+	if d, err := env.ClaudeDir(); err != nil || d != filepath.Join(home, "cl") {
+		t.Fatalf("ClaudeDir = %q, %v", d, err)
 	}
 }
 
