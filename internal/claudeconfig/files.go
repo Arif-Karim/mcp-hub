@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -15,6 +16,7 @@ import (
 const (
 	maxBackups   = 5
 	backupPrefix = "claude.json."
+	backupLayout = "20060102T150405.000000000Z"
 	defaultMode  = fs.FileMode(0o600)
 	ledgerFormat = 1
 )
@@ -25,6 +27,7 @@ type snapshot struct {
 	exists  bool
 	raw     []byte
 	mode    fs.FileMode
+	info    fs.FileInfo // nil for a new file
 	top     map[string]json.RawMessage
 	servers map[string]json.RawMessage
 }
@@ -58,7 +61,7 @@ func readConfig(path string) (snapshot, error) {
 	if err != nil {
 		return s, err
 	}
-	s.exists, s.raw, s.mode = true, raw, fi.Mode().Perm()
+	s.exists, s.raw, s.mode, s.info = true, raw, fi.Mode().Perm(), fi
 	s.top = nil
 	if err := json.Unmarshal(raw, &s.top); err != nil || s.top == nil {
 		return s, fmt.Errorf("%w: %s is not a JSON object", ErrConfigInvalid, path)
@@ -102,7 +105,7 @@ func (w *Writer) writeConfig(target string, snap snapshot) error {
 			return err
 		}
 	}
-	return writeAtomic(target, data, snap.mode, func() error {
+	return writeAtomic(target, data, snap.mode, snap.info, func() error {
 		if w.beforeRename != nil {
 			w.beforeRename()
 		}
@@ -118,26 +121,42 @@ func (w *Writer) writeConfig(target string, snap snapshot) error {
 	})
 }
 
-// backup stores the pre-write bytes and keeps only the newest maxBackups.
+// backupName matches only files backup created, so pruning never deletes anything else.
+var backupName = regexp.MustCompile(`^claude\.json\.\d{8}T\d{6}\.\d{9}Z(-\d{3})?$`)
+
+// backup stores the pre-write bytes (fsync'd, never overwriting an existing
+// backup even if the clock repeats) and keeps only the newest maxBackups.
 func (w *Writer) backup(raw []byte) error {
 	if err := os.MkdirAll(w.BackupDir, 0o700); err != nil {
 		return err
 	}
-	name := backupPrefix + w.now().UTC().Format("20060102T150405.000000000Z")
-	if err := os.WriteFile(filepath.Join(w.BackupDir, name), raw, 0o600); err != nil {
-		return err
-	}
-	ents, err := os.ReadDir(w.BackupDir)
+	ours, err := w.listBackups()
 	if err != nil {
 		return err
 	}
-	var ours []string
-	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), backupPrefix) {
-			ours = append(ours, e.Name())
+	name := backupPrefix + w.now().UTC().Format(backupLayout)
+	if n := len(ours); n > 0 && name <= ours[n-1] {
+		// Same (or earlier) timestamp as the newest backup: sort after it instead.
+		if name, err = nextBackupName(ours[n-1]); err != nil {
+			return err
 		}
 	}
-	slices.Sort(ours) // timestamps sort lexically
+	// O_EXCL: never overwrite an existing backup.
+	f, err := os.OpenFile(filepath.Join(w.BackupDir, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- under BackupDir
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(raw)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	ours = append(ours, name)
 	for len(ours) > maxBackups {
 		if err := os.Remove(filepath.Join(w.BackupDir, ours[0])); err != nil {
 			return err
@@ -147,15 +166,51 @@ func (w *Writer) backup(raw []byte) error {
 	return nil
 }
 
+// listBackups returns our backup names, oldest first (timestamps and
+// zero-padded suffixes sort lexically).
+func (w *Writer) listBackups() ([]string, error) {
+	ents, err := os.ReadDir(w.BackupDir)
+	if err != nil {
+		return nil, err
+	}
+	var ours []string
+	for _, e := range ents {
+		if backupName.MatchString(e.Name()) {
+			ours = append(ours, e.Name())
+		}
+	}
+	slices.Sort(ours)
+	return ours, nil
+}
+
+// nextBackupName returns the name that sorts immediately after last.
+func nextBackupName(last string) (string, error) {
+	stamp, suffix, _ := strings.Cut(last, "Z-")
+	n := 0
+	if suffix != "" {
+		if _, err := fmt.Sscanf(suffix, "%03d", &n); err != nil {
+			return "", err
+		}
+	}
+	if n >= 999 {
+		return "", errors.New("too many backups with the same timestamp")
+	}
+	return fmt.Sprintf("%sZ-%03d", strings.TrimSuffix(stamp, "Z"), n+1), nil
+}
+
 // writeAtomic writes data to a temp file in path's directory (same filesystem),
-// fsyncs it, runs check, then renames it over path.
-func writeAtomic(path string, data []byte, mode fs.FileMode, check func() error) (err error) {
+// gives it orig's (best effort) owner and the given mode, fsyncs it, runs
+// check, then renames it over path.
+func writeAtomic(path string, data []byte, mode fs.FileMode, orig fs.FileInfo, check func() error) (err error) {
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
 	tmp := f.Name()
+	if orig != nil {
+		chownLike(f, orig)
+	}
 	defer func() {
 		if err != nil {
 			_ = os.Remove(tmp)
@@ -221,5 +276,5 @@ func (w *Writer) writeLedger(owned map[string]Owned) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(w.Ledger, data, 0o600, nil)
+	return writeAtomic(w.Ledger, data, 0o600, nil, nil)
 }

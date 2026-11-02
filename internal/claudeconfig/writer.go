@@ -8,16 +8,30 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 )
 
-// mu serialises every read-modify-write in this process (all Writers share the files).
+// mu serialises read-modify-write cycles within this process; the flock on
+// lockName serialises them across processes (daemon + CLI).
 var mu sync.Mutex
+
+const lockName = "claudeconfig.lock"
 
 // errChanged means the config changed between our read and our rename.
 var errChanged = errors.New("config changed during write")
+
+// lock takes the in-process mutex and the cross-process flock.
+func (w *Writer) lock() (func(), error) {
+	mu.Lock()
+	unlock, err := lockFile(filepath.Join(filepath.Dir(w.Ledger), lockName))
+	if err != nil {
+		mu.Unlock()
+		return nil, err
+	}
+	return func() { unlock(); mu.Unlock() }, nil
+}
 
 // Add writes hub__<id> pointing at e and records it in the ledger. It refuses
 // (ErrConfigConflict) to overwrite an entry the hub did not create or that the
@@ -33,16 +47,21 @@ func (w *Writer) Add(id string, e ServerEntry) error {
 	}
 	hash := hashEntry(raw)
 	return w.update(func(servers map[string]json.RawMessage, owned map[string]Owned) (bool, error) {
+		prev := ""
 		if cur, ok := servers[name]; ok {
 			if err := checkOwned(id, cur, owned); err != nil {
 				return false, err
 			}
-			if owned[id].Hash == hash {
-				return false, nil // already exactly what we want
+			prev = hashEntry(cur)
+			if prev == hash { // config already right; at most the ledger needs settling
+				rec := owned[id]
+				rec.URL, rec.Hash, rec.PrevHash = e.URL, hash, ""
+				owned[id] = rec
+				return false, nil
 			}
 		}
 		servers[name] = raw
-		owned[id] = Owned{ID: id, ConfigName: name, URL: e.URL, Hash: hash, EnabledAt: w.now()}
+		owned[id] = Owned{ID: id, ConfigName: name, URL: e.URL, Hash: hash, PrevHash: prev, EnabledAt: w.now()}
 		return true, nil
 	})
 }
@@ -71,8 +90,8 @@ func (w *Writer) Remove(id string) error {
 }
 
 // RemoveAll (uninstall) removes every ledger-owned, unmodified entry in one
-// write. Entries the user edited are left in place and reported together as
-// an ErrConfigConflict after the others have been removed.
+// write. Entries the user edited are left in place and reported as a
+// *PartialRemoveError (which is also an ErrConfigConflict).
 func (w *Writer) RemoveAll() error {
 	var skipped []string
 	err := w.update(func(servers map[string]json.RawMessage, owned map[string]Owned) (bool, error) {
@@ -98,26 +117,30 @@ func (w *Writer) RemoveAll() error {
 		return err
 	}
 	if len(skipped) > 0 {
-		return fmt.Errorf("%w: left user-modified entries in place: %s", ErrConfigConflict, strings.Join(skipped, ", "))
+		return &PartialRemoveError{Skipped: skipped}
 	}
 	return nil
 }
 
 // Owned returns the ledger records keyed by id (empty, never nil, without a ledger).
 func (w *Writer) Owned() (map[string]Owned, error) {
-	mu.Lock()
-	defer mu.Unlock()
+	unlock, err := w.lock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	return w.readLedger()
 }
 
 // checkOwned reports ErrConfigConflict unless cur is an entry the ledger says
-// we wrote and whose content still matches the recorded hash.
+// we wrote and whose content matches the recorded hash (or the previous hash of
+// an interrupted change).
 func checkOwned(id string, cur json.RawMessage, owned map[string]Owned) error {
 	rec, ok := owned[id]
 	if !ok {
 		return fmt.Errorf("%w: %s exists but was not created by mcp-hub", ErrConfigConflict, ConfigName(id))
 	}
-	if hashEntry(cur) != rec.Hash {
+	if h := hashEntry(cur); h != rec.Hash && (rec.PrevHash == "" || h != rec.PrevHash) {
 		return fmt.Errorf("%w: %s was modified outside mcp-hub", ErrConfigConflict, ConfigName(id))
 	}
 	return nil
@@ -140,6 +163,19 @@ func hashEntry(raw json.RawMessage) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// settle clears PrevHash on records whose config entry now matches Hash, i.e.
+// whose change has landed. Records still pending (a crashed change) keep it.
+func settle(owned map[string]Owned, servers map[string]json.RawMessage) map[string]Owned {
+	out := maps.Clone(owned)
+	for id, rec := range out {
+		if cur, ok := servers[rec.ConfigName]; ok && hashEntry(cur) == rec.Hash {
+			rec.PrevHash = ""
+			out[id] = rec
+		}
+	}
+	return out
+}
+
 // editFunc mutates the mcpServers map and ledger in place and reports whether
 // the config file needs rewriting. Returning an error aborts without writing.
 type editFunc func(servers map[string]json.RawMessage, owned map[string]Owned) (configChanged bool, err error)
@@ -148,13 +184,23 @@ type editFunc func(servers map[string]json.RawMessage, owned map[string]Owned) (
 // our read and our rename (Claude Code writes it often), the edit is re-applied
 // once to the fresh content; a second change is reported as ErrConfigConflict.
 //
-// Ledger ordering: before touching the config we persist old ∪ new records, so
-// a crash can only leave the ledger claiming an entry that is absent (harmless:
-// Add re-creates it, Remove drops the record) and never leave a hub entry the
-// ledger does not know about (which would lock it as "user-owned").
-func (w *Writer) update(edit editFunc) error {
-	mu.Lock()
-	defer mu.Unlock()
+// Crash ordering — ledger first, config second, ledger again:
+//  1. ledger := before ∪ new records (new records carry PrevHash = the entry they replace)
+//  2. config renamed into place
+//  3. ledger := new records, settled (PrevHash cleared)
+//
+// A crash after 1 leaves the ledger claiming an entry that is absent or still
+// at PrevHash — both are recognised as ours, so the next call self-heals. The
+// opposite order could leave a hub__ entry the ledger does not know, which
+// would be locked forever as "user-owned". Any error after step 1 and before
+// step 2 completes restores the previous ledger, so a failed call never leaves
+// the ledger claiming an entry it did not write.
+func (w *Writer) update(edit editFunc) (err error) {
+	unlock, err := w.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	target, err := resolveTarget(w.ClaudeConfig)
 	if err != nil {
 		return err
@@ -163,6 +209,12 @@ func (w *Writer) update(edit editFunc) error {
 	if err != nil {
 		return err
 	}
+	inflight := false
+	defer func() {
+		if err != nil && inflight {
+			_ = w.writeLedger(before) // best effort; the config was not changed
+		}
+	}()
 	for attempt := 1; ; attempt++ {
 		snap, err := readConfig(target)
 		if err != nil {
@@ -174,6 +226,7 @@ func (w *Writer) update(edit editFunc) error {
 			return err
 		}
 		if !changed {
+			owned = settle(owned, snap.servers)
 			if maps.Equal(before, owned) {
 				return nil
 			}
@@ -181,6 +234,7 @@ func (w *Writer) update(edit editFunc) error {
 		}
 		union := maps.Clone(before)
 		maps.Copy(union, owned)
+		inflight = true
 		if err := w.writeLedger(union); err != nil {
 			return err
 		}
@@ -188,13 +242,13 @@ func (w *Writer) update(edit editFunc) error {
 		if errors.Is(err, errChanged) && attempt == 1 {
 			continue
 		}
+		if errors.Is(err, errChanged) {
+			return fmt.Errorf("%w: config changed during write, retry", ErrConfigConflict)
+		}
 		if err != nil {
-			_ = w.writeLedger(before) // best effort: the config was not changed
-			if errors.Is(err, errChanged) {
-				return fmt.Errorf("%w: config changed during write, retry", ErrConfigConflict)
-			}
 			return err
 		}
-		return w.writeLedger(owned)
+		inflight = false // config landed: the union ledger is now the safe fallback
+		return w.writeLedger(settle(owned, snap.servers))
 	}
 }

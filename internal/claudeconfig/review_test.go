@@ -155,6 +155,22 @@ func TestCrashMidURLChangeRecovers(t *testing.T) {
 	})
 }
 
+func TestNextBackupName(t *testing.T) {
+	base := "claude.json.20261101T090000.000000000Z"
+	for last, want := range map[string]string{
+		base:          base + "-001",
+		base + "-009": base + "-010",
+		base + "-998": base + "-999",
+	} {
+		if got, err := nextBackupName(last); err != nil || got != want {
+			t.Fatalf("nextBackupName(%q) = %q, %v; want %q", last, got, err, want)
+		}
+	}
+	if _, err := nextBackupName(base + "-999"); err == nil {
+		t.Fatal("expected error past 999")
+	}
+}
+
 // Review nice-to-have 5: a frozen clock must not overwrite backups, and only
 // files with our exact name layout are pruned.
 func TestBackupNamesUniqueAndPruneOnlyOurs(t *testing.T) {

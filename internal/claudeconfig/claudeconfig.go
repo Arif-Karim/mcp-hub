@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -66,7 +67,12 @@ type PartialRemoveError struct {
 	Skipped []string // config names left in place
 }
 
-func (e *PartialRemoveError) Error() string { return "not implemented" }
+func (e *PartialRemoveError) Error() string {
+	return "left user-modified entries in place: " + strings.Join(e.Skipped, ", ")
+}
+
+// Unwrap makes errors.Is(err, ErrConfigConflict) true.
+func (e *PartialRemoveError) Unwrap() error { return ErrConfigConflict }
 
 // ServerEntry is the mcpServers value for an HTTP MCP server.
 type ServerEntry struct {
@@ -76,14 +82,14 @@ type ServerEntry struct {
 
 // Owned is a ledger record: proof the hub created an entry, and its hash at write time.
 type Owned struct {
-	ID         string    `json:"id"`
-	ConfigName string    `json:"configName"`
-	URL        string    `json:"url"`
-	Hash       string    `json:"hash"` // sha256 of the canonical entry JSON
+	ID         string `json:"id"`
+	ConfigName string `json:"configName"`
+	URL        string `json:"url"`
+	Hash       string `json:"hash"` // sha256 of the canonical entry JSON
 	// PrevHash is set only while a change to an existing entry is in flight; a
 	// config entry matching it is still ours (the write may have crashed).
-	PrevHash string `json:"prevHash,omitempty"`
-	EnabledAt  time.Time `json:"enabledAt"`
+	PrevHash  string    `json:"prevHash,omitempty"`
+	EnabledAt time.Time `json:"enabledAt"`
 }
 
 // Writer edits the Claude config. The zero Now uses time.Now.
