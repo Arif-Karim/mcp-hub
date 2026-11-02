@@ -1,0 +1,111 @@
+name: release
+
+# Builds and publishes mcp-hub release archives that install.sh downloads:
+#   mcp-hub_<os>_<arch>.tar.gz (binary + skill/mcp-hub/SKILL.md) and checksums.txt.
+#
+# Two jobs so repo code never runs with a write token:
+#   build   (contents: read)  guard, test, scripts/package-release.sh -> upload dist/
+#   release (contents: write) downloads dist/ and creates the GitHub release; runs no repo code.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release from main, e.g. v0.1.0 (creates the tag)"
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: release-mcp-hub
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Manual releases only from main.
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: resolve version and guard
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then v="$INPUT_VERSION"; else v="$REF_NAME"; fi
+          [[ "$v" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] || { echo "invalid version: $v"; exit 1; }
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            # A pre-existing tag would make the release point at a different commit than the assets.
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$v" --silent 2>/dev/null; then
+              echo "tag $v already exists; push the tag instead or bump the version"; exit 1
+            fi
+          else
+            # Only release commits that are on main (i.e. reviewed and merged).
+            status=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)
+            [[ "$status" == "identical" || "$status" == "behind" ]] \
+              || { echo "tagged commit is not on main (compare status: $status)"; exit 1; }
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: test
+        run: go test -race ./...
+
+      - name: package
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: scripts/package-release.sh darwin/arm64 darwin/amd64 linux/amd64
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the tag (dispatch) and the release
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          gh release create "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "mcp-hub $VERSION" \
+            --generate-notes \
+            dist/*.tar.gz dist/checksums.txt
