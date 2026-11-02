@@ -107,3 +107,10 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   (healthz 200, no token 401, initialize OK, SIGTERM → clean shutdown).
 - Intervention: gosec G703/G704 taint findings on the JWKS fetch (operator-configured URL) and the build-time
   archiver; suppressed inline with justification rather than weakening the lint config.
+- **Review round (PR #6):** reviewer reproduced a bug my smoke test missed: SIGTERM with an open `GET /mcp` SSE
+  stream (Claude Code's default) hung 10s and exited 1. My test closed no stream, so it passed. Fixed with a base
+  context cancelled on `Shutdown`, plus a test that holds an SSE stream open. Also from review: JWKS fetch moved
+  outside the lock (single-flight, detached timeout, 5s failure backoff, 10m key max age, cross-host redirects
+  refused), idle MCP sessions reaped after 30m, and the publish workflow split into read-only build and
+  write-only release jobs with SHA-pinned actions. Lesson: smoke-test with the real client's connection
+  pattern, not just one request/response.
