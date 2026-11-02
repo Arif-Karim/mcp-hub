@@ -54,12 +54,12 @@ func (h *handler) reverseProxy(id string, target *url.URL, rest, authz string, s
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			switch {
 			case errors.Is(err, errUpstreamAuth), errors.Is(err, errContentType):
-				slog.Warn("proxy blocked upstream response", "server", id, "reason", err.Error())
+				slog.Warn("proxy blocked upstream response", "server", httpx.LogSafe(id), "reason", httpx.LogSafe(err.Error()))
 				httpx.WriteError(w, http.StatusBadGateway, httpx.CodeStartFailed, err.Error())
 			case r.Context().Err() != nil:
 				sw.auditStatus = StatusClientClosed // client went away; nobody to answer
 			default:
-				slog.Warn("proxy upstream unreachable", "server", id, "err", err)
+				slog.Warn("proxy upstream unreachable", "server", httpx.LogSafe(id), "err", httpx.LogSafe(err.Error()))
 				httpx.WriteError(w, http.StatusBadGateway, httpx.CodeStartFailed, "upstream MCP server unreachable")
 			}
 		},
