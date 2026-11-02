@@ -96,6 +96,9 @@ func TestAcceptedWithoutContentTypeIsAllowedWhenChunked(t *testing.T) {
 	if rec := serve(f.h, req(http.MethodPost, "/mcp/svc-a", callBody)); rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want 202", rec.Code)
 	}
+	if e := f.audit.only(t); e.Status != http.StatusAccepted {
+		t.Errorf("audit = %+v", e)
+	}
 }
 
 // A 202 carries no content per the MCP spec, so any untyped body is dropped
@@ -104,6 +107,7 @@ func TestAcceptedUntypedBodyIsDropped(t *testing.T) {
 	up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header()["Content-Type"] = nil
 		w.WriteHeader(http.StatusAccepted)
+		w.(http.Flusher).Flush() // chunked, with a body following
 		_, _ = io.WriteString(w, "<script>alert(1)</script>")
 	})
 	f := newFixture(t, resolver{"svc-a": {URL: up.URL, Auth: catalogue.AuthNone}}, nil)
@@ -115,6 +119,9 @@ func TestAcceptedUntypedBodyIsDropped(t *testing.T) {
 		t.Errorf("body = %q, want empty", rec.Body.String())
 	}
 	assertSecurityHeaders(t, rec.Header())
+	if e := f.audit.only(t); e.Status != http.StatusAccepted {
+		t.Errorf("audit = %+v", e)
+	}
 }
 
 func TestUpstreamAuthRejectionIsMappedTo502(t *testing.T) {

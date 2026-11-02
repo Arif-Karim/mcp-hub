@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -48,7 +49,11 @@ func (h *handler) reverseProxy(id string, target *url.URL, rest, authz string, s
 			}
 			if resp.StatusCode == http.StatusAccepted && resp.Header.Get("Content-Type") == "" {
 				// MCP answers notifications with 202 and no content; servers may
-				// send it chunked. Drop any body rather than forward it untyped.
+				// send it chunked. Drop any body rather than forward it untyped,
+				// draining a little first so the upstream connection can be reused.
+				if n, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10)); n > 0 {
+					slog.Debug("proxy dropped untyped 202 body", "server", httpx.LogSafe(id), "bytes", n)
+				}
 				_ = resp.Body.Close()
 				resp.Body, resp.ContentLength = http.NoBody, 0
 				resp.TransferEncoding = nil
