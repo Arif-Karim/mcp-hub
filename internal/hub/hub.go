@@ -73,16 +73,22 @@ type record struct {
 	proc      Process // local only
 	enabledAt time.Time
 	lastError string
+	restoring bool // enabled in the ledger, Restore has not brought it back yet
 }
 
 // Service is the enable/disable orchestrator. It implements proxy.Resolver.
 type Service struct {
 	cfg Config
 
-	mu      sync.Mutex // guards records and locks
+	mu      sync.Mutex // guards records, locks and closing
 	records map[string]*record
 	locks   map[string]*sync.Mutex
+	closing bool
+	ops     sync.WaitGroup // in-flight Enable / restore of one server
 }
+
+// DefaultRestoreTimeout bounds restoring one server (download + start).
+const DefaultRestoreTimeout = 2 * time.Minute
 
 // New returns a Service. Call Restore once at startup.
 func New(cfg Config) *Service {
@@ -98,6 +104,9 @@ func New(cfg Config) *Service {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	if cfg.RestoreTimeout <= 0 {
+		cfg.RestoreTimeout = DefaultRestoreTimeout
+	}
 	return &Service{cfg: cfg, records: map[string]*record{}, locks: map[string]*sync.Mutex{}}
 }
 
@@ -106,6 +115,11 @@ func (s *Service) ProxyURL(id string) string { return s.cfg.ProxyBase + "/mcp/" 
 
 // Enable makes id usable from Claude Code. It is idempotent.
 func (s *Service) Enable(ctx context.Context, id string) (catalogue.InstallState, error) {
+	done, err := s.begin()
+	if err != nil {
+		return s.State(id), err
+	}
+	defer done()
 	defer s.lock(id)()
 	e, err := s.cfg.Catalogue.Get(id)
 	if err != nil {
@@ -155,7 +169,7 @@ func (s *Service) enable(ctx context.Context, e catalogue.Entry, enabledAt time.
 		if !r.enabled {
 			r.enabledAt = enabledAt
 		}
-		r.enabled, r.upstream, r.proc, r.lastError = true, up, proc, ""
+		r.enabled, r.upstream, r.proc, r.lastError, r.restoring = true, up, proc, "", false
 	})
 	return nil
 }
@@ -207,13 +221,34 @@ func (s *Service) Restore(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("read ledger: %w", err)
 	}
+	ids := slices.Sorted(maps.Keys(owned))
+	// Until each server is brought back it shows as enabled but stopped (and
+	// does not resolve), so the UI is truthful while Restore runs in the background.
+	for _, id := range ids {
+		s.update(id, func(r *record) {
+			if !r.enabled {
+				*r = record{enabled: true, enabledAt: owned[id].EnabledAt, restoring: true}
+			}
+		})
+	}
 	var errs []error
-	for _, id := range slices.Sorted(maps.Keys(owned)) {
-		if err := s.restore(ctx, id, owned[id].EnabledAt); err != nil {
+	for _, id := range ids {
+		if err := s.restoreOne(ctx, id, owned[id].EnabledAt); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func (s *Service) restoreOne(ctx context.Context, id string, enabledAt time.Time) error {
+	done, err := s.begin()
+	if err != nil {
+		return err
+	}
+	defer done()
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.RestoreTimeout)
+	defer cancel()
+	return s.restore(ctx, id, enabledAt)
 }
 
 func (s *Service) restore(ctx context.Context, id string, enabledAt time.Time) error {
@@ -231,14 +266,16 @@ func (s *Service) restore(ctx context.Context, id string, enabledAt time.Time) e
 	if reason != "" {
 		s.cfg.Logger.Warn("auto-disabling server", "server", id, "reason", reason)
 		if err := s.disable(id, reason); err != nil {
-			s.update(id, func(r *record) { r.lastError = reason + " (config not removed: " + err.Error() + ")" })
+			s.update(id, func(r *record) {
+				*r = record{lastError: reason + " (config not removed: " + err.Error() + ")"}
+			})
 			return fmt.Errorf("auto-disable %s: %w", id, err)
 		}
 		return nil
 	}
 	if err := s.enable(ctx, e, enabledAt); err != nil {
 		s.cfg.Logger.Error("restore failed", "server", id, "err", err)
-		s.update(id, func(r *record) { r.enabled, r.enabledAt, r.lastError = true, enabledAt, err.Error() })
+		s.update(id, func(r *record) { r.enabled, r.enabledAt, r.lastError, r.restoring = true, enabledAt, err.Error(), false })
 		return fmt.Errorf("restore %s: %w", id, err)
 	}
 	s.cfg.Logger.Info("server restored", "server", id)
@@ -254,6 +291,8 @@ func (s *Service) State(id string) catalogue.InstallState {
 	}
 	st.Enabled, st.ProxyURL, st.EnabledAt = true, s.ProxyURL(id), r.enabledAt
 	switch {
+	case r.restoring:
+		st.Status = catalogue.StatusStopped
 	case r.lastError != "":
 		st.Status = catalogue.StatusError
 	case r.proc == nil:
@@ -271,7 +310,7 @@ func (s *Service) State(id string) catalogue.InstallState {
 // Resolve implements proxy.Resolver: only enabled, ready or running servers resolve.
 func (s *Service) Resolve(id string) (proxy.Upstream, bool) {
 	r := s.get(id)
-	if !r.enabled || r.lastError != "" || r.upstream.URL == "" || (r.proc != nil && !r.proc.Running()) {
+	if !r.enabled || r.restoring || r.lastError != "" || r.upstream.URL == "" || (r.proc != nil && !r.proc.Running()) {
 		return proxy.Upstream{}, false
 	}
 	return r.upstream, true
@@ -343,5 +382,33 @@ func (p procRunner) Stop(id string) error { return p.r.Stop(id) }
 // runner.ErrStartFailed (contract code start_failed).
 var ErrShuttingDown = fmt.Errorf("%w: daemon shutting down", runner.ErrStartFailed)
 
-// Close is a stub (red).
-func (s *Service) Close(context.Context) error { return nil }
+// begin registers an in-flight operation, or refuses once Close has run.
+func (s *Service) begin() (func(), error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing {
+		return nil, ErrShuttingDown
+	}
+	s.ops.Add(1)
+	return s.ops.Done, nil
+}
+
+// Close refuses new Enable/Restore work and waits (bounded by ctx) for work
+// in flight, so the caller can then stop every process knowing none will be
+// started behind its back.
+func (s *Service) Close(ctx context.Context) error {
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+	idle := make(chan struct{})
+	go func() {
+		s.ops.Wait()
+		close(idle)
+	}()
+	select {
+	case <-idle:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}

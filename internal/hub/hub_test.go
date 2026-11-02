@@ -726,13 +726,19 @@ func TestCloseWaitsForInFlightEnableThenRefuses(t *testing.T) {
 func TestCloseIsBounded(t *testing.T) {
 	e := newEnv(t)
 	e.run.entered, e.run.block = make(chan string, 1), make(chan struct{})
-	defer close(e.run.block)
 	s := e.service(defaultStore())
-	go func() { _, _ = s.Enable(context.Background(), "svc") }()
+	enabled := make(chan struct{})
+	go func() {
+		defer close(enabled)
+		_, _ = s.Enable(context.Background(), "svc")
+	}()
 	<-e.run.entered
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if err := s.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+	err := s.Close(ctx)
+	close(e.run.block)
+	<-enabled // let it finish before t.TempDir is removed
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Close = %v, want DeadlineExceeded", err)
 	}
 }
