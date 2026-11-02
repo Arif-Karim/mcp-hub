@@ -177,5 +177,7 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   way (temp file + rename). A test fails if a second copy reappears under `skill/`, so the copies cannot drift.
 - The UI reads `Status.skill` and shows an Install/Update banner; the "use mcp-hub from Claude Code" tip only appears once
   the skill is there. `POST /api/v1/skill/install` writes under `~/.claude`, so a test proves a cross-site Origin gets 403.
-- `GET /api/v1/status` is served by PR #15 (lane F1, not yet merged), so populating `Status.skill` is a 3-line follow-up
-  in that wiring; this lane did not touch `internal/daemon`/`hub` to keep that merge clean.
+- Lane G avoided `internal/daemon`/`hub` while #15 was open, then rebased once it merged and wired `Status.skill` through
+  `daemon.Config.ClaudeDir` (red → green). Review of #19 caught that Claude Code reads `CLAUDE_CONFIG_DIR`, not our
+  `CLAUDE_HOME_DIR`: with it set, the banner would have said "installed" while Claude still could not see the skill, which
+  is the very failure this lane fixes. Now resolved in the same order in Go and `install.sh` and forwarded to launchd.

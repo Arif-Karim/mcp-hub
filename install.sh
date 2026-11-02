@@ -23,7 +23,8 @@ REPO="${MCP_HUB_REPO:-Arif-Karim/mcp-hub}"
 ADDR="${MCP_HUB_ADDR:-127.0.0.1:7420}"
 BIN_DIR="${HOME}/.local/bin"
 BIN="${BIN_DIR}/mcp-hub"
-CLAUDE_DIR="${HOME}/.claude"
+# Same order as `mcp-hub install-skill`: mcp-hub override, then Claude Code's own CLAUDE_CONFIG_DIR.
+CLAUDE_DIR="${CLAUDE_HOME_DIR:-${CLAUDE_CONFIG_DIR:-${HOME}/.claude}}"
 SKILL_DIR="${CLAUDE_DIR}/skills/mcp-hub"
 HUB_HOME="${MCP_HUB_HOME:-${HOME}/.mcp-hub}"
 LOG_DIR="${HUB_HOME}/logs"
@@ -219,9 +220,9 @@ start_daemon() {
   stop_daemon
   if use_launchd; then
     mkdir -p "$(dirname "$PLIST")"
-    local extra_env=""
+    local extra_env="<key>CLAUDE_HOME_DIR</key><string>$(xml_escape "$CLAUDE_DIR")</string>"
     if [[ -n "${CLAUDE_CONFIG_PATH:-}" ]]; then
-      extra_env="<key>CLAUDE_CONFIG_PATH</key><string>$(xml_escape "$CLAUDE_CONFIG_PATH")</string>"
+      extra_env+="<key>CLAUDE_CONFIG_PATH</key><string>$(xml_escape "$CLAUDE_CONFIG_PATH")</string>"
     fi
     cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -257,7 +258,7 @@ EOF
   else
     # A plist left by an earlier launchd install would start a second daemon at next login.
     if [[ -f "$PLIST" ]]; then rm -f "$PLIST"; log "removed old ${PLIST} (--no-launchd)"; fi
-    MCP_HUB_HOME="$HUB_HOME" MCP_HUB_ADDR="$ADDR" nohup "$BIN" serve >>"$LOG_DIR/daemon.log" 2>&1 &
+    CLAUDE_HOME_DIR="$CLAUDE_DIR" MCP_HUB_HOME="$HUB_HOME" MCP_HUB_ADDR="$ADDR" nohup "$BIN" serve >>"$LOG_DIR/daemon.log" 2>&1 &
     echo $! > "$PID_FILE"
     log "daemon started in the background (pid $!, --no-launchd)"
   fi

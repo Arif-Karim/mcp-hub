@@ -23,7 +23,8 @@ Any of these writes `~/.claude/skills/mcp-hub/SKILL.md` (user scope, available i
 skill embedded in the binary, so the installed skill always matches the binary's version:
 
 - `install.sh` runs `mcp-hub install-skill` (and `install.sh --uninstall` removes it);
-- `mcp-hub install-skill` on its own (works offline; `CLAUDE_HOME_DIR` overrides `~/.claude`);
+- `mcp-hub install-skill` on its own (works offline). The directory is `$CLAUDE_HOME_DIR`, else Claude Code's own
+  `$CLAUDE_CONFIG_DIR`, else `~/.claude`;
 - the web UI's **Install skill** / **Update skill** banner (`POST /api/v1/skill/install`), shown when the skill
   is missing or older than the running binary.
 

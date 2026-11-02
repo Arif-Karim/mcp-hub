@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import type { ApiClient } from '../api/client'
 import type { SkillStatus } from '../api/types'
 import { errorMessage } from '../lib/errors'
@@ -11,6 +11,7 @@ const dismissed = ref(false) // per page load: the problem is real, so it comes 
 const busy = ref(false)
 const done = ref(false)
 const error = ref('')
+const dismissBtn = ref<HTMLButtonElement>()
 
 const outdated = computed(() => props.skill?.installed === true && !props.skill.upToDate)
 const needsAction = computed(() => props.skill !== undefined && (!props.skill.installed || !props.skill.upToDate))
@@ -23,6 +24,9 @@ async function install() {
     await props.client.installSkill()
     done.value = true
     emit('installed')
+    // The focused Install button disappears; keep keyboard focus inside the banner.
+    await nextTick()
+    dismissBtn.value?.focus()
   } catch (e) {
     error.value = errorMessage(e)
   } finally {
@@ -41,10 +45,14 @@ async function install() {
   >
     <span class="callout__mark" aria-hidden="true">{{ done ? '✓' : '!' }}</span>
     <div class="callout__body">
-      <p v-if="done" role="status">
-        <strong>Installed — restart Claude Code or run <code>/reload-plugins</code></strong> to start using the mcp-hub
-        skill.
+      <!-- Always rendered so screen readers announce the success text when it appears. -->
+      <p role="status" aria-live="polite">
+        <template v-if="done">
+          <strong>Installed — restart Claude Code or run <code>/reload-plugins</code></strong> to start using the
+          mcp-hub skill.
+        </template>
       </p>
+      <template v-if="done" />
       <p v-else-if="outdated">
         <strong>Claude Code skill out of date</strong> — this mcp-hub has a newer version of the skill Claude uses to
         find and enable servers.
@@ -65,7 +73,14 @@ async function install() {
     >
       {{ busy ? 'Installing…' : outdated ? 'Update skill' : 'Install skill' }}
     </button>
-    <button type="button" class="icon-btn" aria-label="Dismiss" data-test="skill-dismiss" @click="dismissed = true">
+    <button
+      ref="dismissBtn"
+      type="button"
+      class="icon-btn"
+      aria-label="Dismiss Claude Code skill notice"
+      data-test="skill-dismiss"
+      @click="dismissed = true"
+    >
       ✕
     </button>
   </aside>

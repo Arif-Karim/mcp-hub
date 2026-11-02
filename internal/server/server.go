@@ -50,7 +50,7 @@ func New(opts Options) http.Handler {
 		}
 	}
 	if opts.Status != nil {
-		registerStatus(mux, opts.Status)
+		registerStatus(mux, opts.Status, opts.Skill)
 	}
 	registerLaneC(mux, opts)
 	if opts.Skill != nil {

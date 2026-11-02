@@ -222,7 +222,8 @@ Environment:
   MCP_HUB_ADDR        daemon address (default 127.0.0.1:7420, loopback only)
   MCP_HUB_HOME        state, logs and audit directory (default ~/.mcp-hub)
   CLAUDE_CONFIG_PATH  Claude Code user config (default ~/.claude.json)
-  CLAUDE_HOME_DIR     Claude Code directory the skill is installed under (default ~/.claude)
+  CLAUDE_HOME_DIR     Claude Code directory the skill is installed under
+                      (default $CLAUDE_CONFIG_DIR, else ~/.claude)
 
 Exit codes: 0 ok, 1 error, 2 usage/validation/not approved, 3 daemon not running.
 `

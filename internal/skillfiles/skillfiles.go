@@ -30,10 +30,17 @@ type State struct {
 // Content returns the embedded SKILL.md.
 func Content() []byte { return bytes.Clone(skillMD) }
 
-// DefaultClaudeDir is $CLAUDE_HOME_DIR, or ~/.claude.
+// DefaultClaudeDir is $CLAUDE_HOME_DIR (mcp-hub override), else Claude Code's
+// own $CLAUDE_CONFIG_DIR, else ~/.claude. Relative paths are rejected: under
+// launchd the working directory is /, so they would point somewhere unexpected.
 func DefaultClaudeDir() (string, error) {
-	if d := os.Getenv("CLAUDE_HOME_DIR"); d != "" {
-		return d, nil
+	for _, key := range []string{"CLAUDE_HOME_DIR", "CLAUDE_CONFIG_DIR"} {
+		if d := os.Getenv(key); d != "" {
+			if !filepath.IsAbs(d) {
+				return "", fmt.Errorf("%s must be an absolute path, got %q", key, d)
+			}
+			return d, nil
+		}
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -65,6 +72,10 @@ func Install(claudeDir string) error {
 		return err
 	}
 	if err := tmp.Chmod(fileMode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		return err
 	}
