@@ -94,4 +94,18 @@ describe('CatalogueView', () => {
     await card(w, 'context7').get('[data-test=open]').trigger('click')
     expect(w.get('[role=dialog]').text()).toContain('Context7')
   })
+
+  it('shows the "Use mcp-hub from Claude Code" tip only once the skill is installed', async () => {
+    localStorage.removeItem('mcp-hub.callout.dismissed')
+    const client = createMockClient({ latencyMs: 0 })
+    const path = '/Users/dev/.claude/skills/mcp-hub/SKILL.md'
+    const w = mount(CatalogueView, { props: { client, skill: { installed: false, upToDate: false, path } } })
+    await flushPromises()
+    expect(w.text()).not.toContain('Use mcp-hub from Claude Code')
+    expect(w.find('[data-test=skill-banner]').exists()).toBe(true)
+
+    await w.setProps({ skill: { installed: true, upToDate: true, path } })
+    expect(w.text()).toContain('Use mcp-hub from Claude Code')
+    expect(w.find('[data-test=skill-banner]').exists()).toBe(false)
+  })
 })

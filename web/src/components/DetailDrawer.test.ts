@@ -15,7 +15,7 @@ describe('DetailDrawer', () => {
     expect(w.text()).toContain('0.1.0')
     expect(w.find('[data-test=config-name]').exists()).toBe(false)
     expect(w.text()).not.toContain('hub__service-directory')
-    expect(w.text()).not.toContain('Restart Claude Code')
+    expect(w.text()).not.toContain('/reload-plugins')
   })
 
   it('explains auth none', () => {
@@ -34,7 +34,7 @@ describe('DetailDrawer', () => {
     const w = mount(DetailDrawer, { props: { item: i } })
     expect(w.get('[data-test=config-name]').text()).toBe('hub__service-directory')
     expect(w.get('[data-test=proxy-url]').text()).toBe('http://127.0.0.1:7420/mcp/service-directory')
-    expect(w.text()).toContain('Restart Claude Code or run /mcp to pick up new servers.')
+    expect(w.text()).toContain('Run /reload-plugins in Claude Code (or restart it) to load the new server.')
     expect(w.findAll('[data-test=copy]')).toHaveLength(2)
   })
 

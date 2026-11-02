@@ -77,4 +77,12 @@ describe('httpClient', () => {
     expect(events).toEqual([{ server: 'x' }])
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/audit?limit=20')
   })
+
+  it('installSkill POSTs to /skill/install and returns the skill status', async () => {
+    const body = { installed: true, upToDate: true, path: '/Users/dev/.claude/skills/mcp-hub/SKILL.md' }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, body))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await httpClient.installSkill()).toEqual(body)
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/skill/install', expect.objectContaining({ method: 'POST' }))
+  })
 })
