@@ -26,3 +26,22 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   efficacy to a meaningless 100%. Re-ran with `--timeout-coefficient 20` to get honest numbers (see verify.md).
 - Gotcha: parallel lane agents share a scratchpad; a `verify.log` was overwritten by another lane's run. Use
   lane-unique filenames for logs.
+
+### Lane A (web UI)
+- **Built:** Vue 3 + Vite + TS UI in `web/` — catalogue (debounced search, kind / enabled-only chips, approval-aware
+  cards), focus-managed detail drawer (`hub__{id}` + proxy URL with copy, restart note), Activity tab (5s polling,
+  privacy-explaining empty state), daemon status pill, Claude Code callout, aria-live toasts. Hand-written CSS
+  tokens, light/dark, responsive to 380px. No component library.
+- **Contract-first:** `src/api/types.ts` mirrors `openapi.yaml`; one `ApiClient` interface with `httpClient`
+  (typed `ApiError {status, code, message}`) and an in-memory `mockClient` (`npm run dev:mock`) that follows the
+  contract's approval/kind rules. `?demoFail=checksum|conflict` makes one enable fail to demo error UX.
+  The mock is tree-shaken out of the production bundle.
+- **TDD:** two red → green cycles (API/lib, then components); 56 Vitest tests. A manual Playwright run against the
+  mock found a real bug the unit tests missed: Esc didn't close the drawer once the toggle button disabled itself
+  mid-request (focus fell to `<body>`). Fixed with a window-level listener plus a regression test.
+- **Review round (one batched review, no must-fix):** six should-fixes taken as one more red → green cycle. The
+  notable ones: a 404 from a route that isn't wired yet no longer claims "server no longer in the catalogue"; the
+  header tells "daemon unreachable" (no response) apart from "status unavailable" (HTTP error); the checksum message
+  no longer promises a publisher notification that nothing sends; publisher-supplied `docsUrl` is only linked if
+  https (or loopback http). `verify.sh` now also builds the UI and checks `internal/webui/dist` stays clean.
+- `npm audit` reports moderate advisories in the dev-only eslint toolchain (minimatch); the only runtime dep is `vue`.

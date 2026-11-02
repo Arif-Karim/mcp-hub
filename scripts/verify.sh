@@ -34,8 +34,12 @@ if [[ -f examples/mcp-server-template/go.mod ]]; then
 fi
 
 if [[ -f web/package.json ]]; then
-  step "web: install, lint, typecheck, unit tests"
-  (cd web && { [[ -d node_modules ]] || npm ci; } && npm run lint && npm run typecheck && npm test)
+  step "web: install, lint, typecheck, unit tests, build"
+  (cd web && { [[ -d node_modules ]] || npm ci; } && npm run lint && npm run typecheck && npm test && npm run build)
+  # The build empties internal/webui/dist and restores the tracked .gitkeep; the tree must stay clean.
+  if [[ -n "$(git status --porcelain -- internal/webui/dist)" ]]; then
+    echo "web build left internal/webui/dist dirty:"; git status --short -- internal/webui/dist; exit 1
+  fi
 fi
 
 if [[ "${1:-}" == "--mutation" ]]; then
