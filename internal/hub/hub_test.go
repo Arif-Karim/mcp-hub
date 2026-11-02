@@ -83,9 +83,21 @@ type fakeRunner struct {
 	stops    []string
 	procs    map[string]*fakeProc
 	nextPort int
+	entered  chan string   // optional: receives the id when Start is entered
+	block    chan struct{} // optional: Start waits for it (or ctx) before starting
 }
 
-func (f *fakeRunner) Start(_ context.Context, id, exe string, env map[string]string) (hub.Process, error) {
+func (f *fakeRunner) Start(ctx context.Context, id, exe string, env map[string]string) (hub.Process, error) {
+	if f.entered != nil {
+		f.entered <- id
+	}
+	if f.block != nil {
+		select {
+		case <-f.block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	time.Sleep(f.delay)
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -670,5 +682,112 @@ func TestRunnerFrom(t *testing.T) {
 	}
 	if err := r.Stop("x1"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCloseWaitsForInFlightEnableThenRefuses(t *testing.T) {
+	e := newEnv(t)
+	e.run.entered, e.run.block = make(chan string, 1), make(chan struct{})
+	s := e.service(defaultStore())
+	enabled := make(chan error, 1)
+	go func() {
+		_, err := s.Enable(context.Background(), "svc")
+		enabled <- err
+	}()
+	<-e.run.entered
+
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close(context.Background()) }()
+	select {
+	case <-closed:
+		t.Fatal("Close returned while an Enable was still in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(e.run.block)
+	if err := <-closed; err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := <-enabled; err != nil {
+		t.Fatalf("in-flight Enable: %v", err)
+	}
+
+	_, err := s.Enable(context.Background(), "wiki")
+	if !errors.Is(err, hub.ErrShuttingDown) || !errors.Is(err, runner.ErrStartFailed) {
+		t.Fatalf("Enable after Close = %v, want ErrShuttingDown (a start_failed)", err)
+	}
+	if _, ok := e.servers(t)["hub__wiki"]; ok {
+		t.Fatal("config written after Close")
+	}
+	if err := s.Restore(context.Background()); !errors.Is(err, hub.ErrShuttingDown) {
+		t.Fatalf("Restore after Close = %v, want ErrShuttingDown", err)
+	}
+}
+
+func TestCloseIsBounded(t *testing.T) {
+	e := newEnv(t)
+	e.run.entered, e.run.block = make(chan string, 1), make(chan struct{})
+	defer close(e.run.block)
+	s := e.service(defaultStore())
+	go func() { _, _ = s.Enable(context.Background(), "svc") }()
+	<-e.run.entered
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := s.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close = %v, want DeadlineExceeded", err)
+	}
+}
+
+func TestRestoreShowsStoppedUntilRestored(t *testing.T) {
+	e := newEnv(t)
+	first := e.service(defaultStore())
+	for _, id := range []string{"svc", "wiki"} {
+		if _, err := first.Enable(context.Background(), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.run = &fakeRunner{entered: make(chan string, 1), block: make(chan struct{})}
+	s := e.service(defaultStore())
+	done := make(chan error, 1)
+	go func() { done <- s.Restore(context.Background()) }()
+	<-e.run.entered // svc is being restarted
+
+	st := s.State("svc")
+	if !st.Enabled || st.Status != catalogue.StatusStopped || st.ProxyURL != base+"/mcp/svc" || !st.EnabledAt.Equal(t0) {
+		t.Fatalf("state while restoring = %+v, want enabled/stopped", st)
+	}
+	if _, ok := s.Resolve("svc"); ok {
+		t.Fatal("resolves before it is restarted")
+	}
+	if n := s.EnabledCount(); n != 2 {
+		t.Fatalf("EnabledCount while restoring = %d, want 2", n)
+	}
+	close(e.run.block)
+	if err := <-done; err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if st := s.State("svc"); st.Status != catalogue.StatusRunning {
+		t.Fatalf("after restore = %+v", st)
+	}
+}
+
+func TestRestorePerServerTimeout(t *testing.T) {
+	e := newEnv(t)
+	first := e.service(defaultStore())
+	if _, err := first.Enable(context.Background(), "svc"); err != nil {
+		t.Fatal(err)
+	}
+	e.run = &fakeRunner{block: make(chan struct{})} // never released: only the timeout ends it
+	s := hub.New(hub.Config{
+		Catalogue: defaultStore(), Installer: e.inst, Runner: e.run, Claude: e.writer,
+		ProxyBase: base, Platform: platform, RestoreTimeout: 100 * time.Millisecond,
+		Logger: slog.New(slog.DiscardHandler),
+	})
+	start := time.Now()
+	err := s.Restore(context.Background())
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 3*time.Second {
+		t.Fatalf("Restore = %v after %v, want prompt DeadlineExceeded", err, time.Since(start))
+	}
+	if st := s.State("svc"); st.Status != catalogue.StatusError || !strings.Contains(st.LastError, "deadline exceeded") {
+		t.Fatalf("state = %+v", st)
 	}
 }

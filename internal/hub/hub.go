@@ -62,6 +62,8 @@ type Config struct {
 	Platform  string // artifact key; "": registry.PlatformKey()
 	Logger    *slog.Logger
 	Now       func() time.Time
+	// RestoreTimeout bounds restoring one server at startup; <= 0: DefaultRestoreTimeout.
+	RestoreTimeout time.Duration
 }
 
 // record is the in-memory state of one id.
@@ -336,3 +338,10 @@ func (p procRunner) Start(ctx context.Context, id, exe string, env map[string]st
 }
 
 func (p procRunner) Stop(id string) error { return p.r.Stop(id) }
+
+// ErrShuttingDown is returned once Close has been called. It wraps
+// runner.ErrStartFailed (contract code start_failed).
+var ErrShuttingDown = fmt.Errorf("%w: daemon shutting down", runner.ErrStartFailed)
+
+// Close is a stub (red).
+func (s *Service) Close(context.Context) error { return nil }
