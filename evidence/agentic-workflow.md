@@ -181,3 +181,13 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   `daemon.Config.ClaudeDir` (red → green). Review of #19 caught that Claude Code reads `CLAUDE_CONFIG_DIR`, not our
   `CLAUDE_HOME_DIR`: with it set, the banner would have said "installed" while Claude still could not see the skill, which
   is the very failure this lane fixes. Now resolved in the same order in Go and `install.sh` and forwarded to launchd.
+
+### Lane I (publish your own MCP server, in the UI)
+- This lane came from the human's product steer, not the original plan: the hub should encourage engineering teams to
+  build MCP servers for their own services, but the UI only served people consuming them. It adds a "Publish your
+  server" header link, a `/publish` guide condensed from `docs/publishing.md` (static TS, no markdown or `v-html`), a
+  "Your service here" invite card at the end of the catalogue grid, and a "publish yours too" hint on pending entries.
+- UI only, no new deps or API changes: routing is a small `lib/route.ts` on `history.pushState` (the daemon's SPA fallback
+  already serves `index.html` for `/publish`). Tests were committed red then green, covering the header link, the 5 steps,
+  `rel="noopener noreferrer"` on external links, Copy success, missing-clipboard and rejected-clipboard fallbacks via an
+  `aria-live` status, the invite card, and the hint on pending entries only.
