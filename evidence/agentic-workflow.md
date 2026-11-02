@@ -167,3 +167,15 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
 - After the review round (rebased on #13/#14/#16): `verify.sh --mutation` passes. cmd/mcp-hub 18/0, daemon 9/1 (90%;
   the survivor is the drain-timeout warning log), hub 39/0, runner 25 killed / 4 lived / 3 timed out (86.2%, up from
   80.8%), server 25/0. Coverage 92.8%; e2e runs inside verify.
+
+### Lane G (skill ships with the app, UX wording)
+- This lane came from the human's hands-on testing, not the original plan. Two findings: after installing, Claude Code
+  did not pick up the skill (nothing told the user it was missing or how to load it), and our "run `/mcp`" advice did
+  not load newly enabled servers; `/reload-plugins` (or a restart) does. Every user-facing string now says that.
+- The skill moved into the binary (`internal/skillfiles`, `go:embed`), so the skill always matches the daemon version and
+  the release tarball is just the binary. `install.sh`, `mcp-hub install-skill` and the UI banner all write it the same
+  way (temp file + rename). A test fails if a second copy reappears under `skill/`, so the copies cannot drift.
+- The UI reads `Status.skill` and shows an Install/Update banner; the "use mcp-hub from Claude Code" tip only appears once
+  the skill is there. `POST /api/v1/skill/install` writes under `~/.claude`, so a test proves a cross-site Origin gets 403.
+- `GET /api/v1/status` is served by PR #15 (lane F1, not yet merged), so populating `Status.skill` is a 3-line follow-up
+  in that wiring; this lane did not touch `internal/daemon`/`hub` to keep that merge clean.
