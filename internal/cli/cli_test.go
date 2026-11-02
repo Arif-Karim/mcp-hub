@@ -408,9 +408,9 @@ func TestDefaultEnv(t *testing.T) {
 	if env.Addr != "127.0.0.1:9999" || env.Stdout == nil || env.Stderr == nil {
 		t.Fatalf("DefaultEnv = %+v", env)
 	}
-	cfg, err := env.Config()
-	if err != nil {
-		t.Fatal(err)
+	cfg, path, err := env.Config()
+	if err != nil || path != filepath.Join(home, "claude.json") {
+		t.Fatalf("Config: %q %v", path, err)
 	}
 	if _, err := cfg.Owned(); err != nil {
 		t.Fatalf("Owned on empty temp home: %v", err)

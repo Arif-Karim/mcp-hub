@@ -20,8 +20,8 @@ func tempWriter(t *testing.T) *claudeconfig.Writer {
 	}}
 }
 
-func configEnv(w ConfigRemover, err error) Env {
-	return Env{Config: func() (ConfigRemover, error) { return w, err }}
+func configEnv(w ConfigRemover, path string, err error) Env {
+	return Env{Config: func() (ConfigRemover, string, error) { return w, path, err }}
 }
 
 func TestUninstallConfigRemovesHubEntriesOnly(t *testing.T) {
@@ -34,7 +34,7 @@ func TestUninstallConfigRemovesHubEntriesOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r := runWith(t, configEnv(w, nil), "uninstall-config")
+	r := runWith(t, configEnv(w, w.ClaudeConfig, nil), "uninstall-config")
 	if r.code != 0 {
 		t.Fatalf("code %d %s", r.code, r.stderr)
 	}
@@ -49,7 +49,7 @@ func TestUninstallConfigRemovesHubEntriesOnly(t *testing.T) {
 }
 
 func TestUninstallConfigNothingToDo(t *testing.T) {
-	r := runWith(t, configEnv(tempWriter(t), nil), "uninstall-config")
+	r := runWith(t, configEnv(tempWriter(t), "", nil), "uninstall-config")
 	if r.code != 0 || !strings.Contains(r.stdout, "No mcp-hub entries") {
 		t.Fatalf("%d %q", r.code, r.stdout)
 	}
@@ -67,7 +67,7 @@ func TestUninstallConfigKeepsUserModified(t *testing.T) {
 	if err := os.WriteFile(w.ClaudeConfig, []byte(edited), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r := runWith(t, configEnv(w, nil), "uninstall-config")
+	r := runWith(t, configEnv(w, w.ClaudeConfig, nil), "uninstall-config")
 	if r.code != 0 {
 		t.Fatalf("partial removal is expected and safe; code %d %s", r.code, r.stderr)
 	}
@@ -87,9 +87,9 @@ func (f failingRemover) RemoveAll() error { return f.removeErr }
 
 func TestUninstallConfigErrors(t *testing.T) {
 	cases := []Env{
-		configEnv(nil, errors.New("no home dir")),
-		configEnv(failingRemover{ownedErr: errors.New("ledger unreadable")}, nil),
-		configEnv(failingRemover{removeErr: claudeconfig.ErrConfigInvalid}, nil),
+		configEnv(nil, "", errors.New("no home dir")),
+		configEnv(failingRemover{ownedErr: errors.New("ledger unreadable")}, "", nil),
+		configEnv(failingRemover{removeErr: claudeconfig.ErrConfigInvalid}, "", nil),
 	}
 	for i, env := range cases {
 		r := runWith(t, env, "uninstall-config")

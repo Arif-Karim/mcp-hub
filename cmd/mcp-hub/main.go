@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
+	"github.com/Arif-Karim/mcp-hub/internal/cli"
 	"github.com/Arif-Karim/mcp-hub/internal/server"
 	"github.com/Arif-Karim/mcp-hub/internal/version"
 	"github.com/Arif-Karim/mcp-hub/internal/webui"
@@ -23,6 +24,11 @@ import (
 const defaultAddr = "127.0.0.1:7420"
 
 func main() {
+	// Client subcommands (search, info, enable, ...) live in internal/cli and
+	// return their own exit codes (2 usage/not approved, 3 daemon down).
+	if len(os.Args) > 1 && cli.Handles(os.Args[1]) {
+		os.Exit(cli.Run(context.Background(), os.Args[1:], cli.DefaultEnv()))
+	}
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "mcp-hub:", err)
 		os.Exit(1)
@@ -31,7 +37,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: mcp-hub <serve|version>")
+		return errors.New("usage: mcp-hub <serve|version|search|info|enable|disable|status|help>")
 	}
 	switch args[0] {
 	case "version":
@@ -40,7 +46,7 @@ func run(args []string) error {
 	case "serve":
 		return serve(args[1:])
 	default:
-		return fmt.Errorf("unknown command %q", args[0])
+		return fmt.Errorf("unknown command %q (run `mcp-hub help`)", args[0])
 	}
 }
 
