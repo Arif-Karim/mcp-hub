@@ -2,6 +2,8 @@ module github.com/Arif-Karim/mcp-hub/examples/mcp-server-template
 
 go 1.27
 
+toolchain go1.27.3
+
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0

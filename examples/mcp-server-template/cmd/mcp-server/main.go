@@ -52,11 +52,22 @@ func run(logger *slog.Logger) error {
 }
 
 // serve runs h on ln until ctx is cancelled, then shuts down gracefully.
+//
+// Every request context derives from baseCtx, which is cancelled as soon as
+// Shutdown starts. Long-lived requests (the MCP standalone SSE stream that
+// clients such as Claude Code keep open) therefore end immediately instead of
+// holding Shutdown until its deadline.
 func serve(ctx context.Context, ln net.Listener, h http.Handler, logger *slog.Logger) error {
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+	defer cancelBase()
 	srv := &http.Server{
 		Handler:           h,
+		BaseContext:       func(net.Listener) context.Context { return baseCtx },
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// No ReadTimeout/WriteTimeout: they would cut long-lived SSE streams.
 	}
+	srv.RegisterOnShutdown(cancelBase)
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()

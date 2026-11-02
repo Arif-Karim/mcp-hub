@@ -18,13 +18,17 @@ import (
 // MCPPath is where the streamable HTTP MCP endpoint is served.
 const MCPPath = "/mcp"
 
-// sessionTimeout is a stub (red).
+// sessionTimeout closes MCP sessions idle this long, so sessions abandoned
+// without a DELETE (e.g. the client was killed) do not leak. Var for tests.
 var sessionTimeout = 30 * time.Minute
 
 // Handler returns the root handler.
 func Handler(v *hubauth.Verifier, logger *slog.Logger) http.Handler {
 	server := directory.NewServer(logger)
-	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	mcpHandler := mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return server },
+		&mcp.StreamableHTTPOptions{SessionTimeout: sessionTimeout, Logger: logger},
+	)
 
 	// hubauth.Middleware does the real verification and returns our JSON 401.
 	// This SDK adapter only lifts the already-verified subject into the SDK's

@@ -47,8 +47,8 @@ func Load(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if u, err := url.Parse(jwks); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return Config{}, fmt.Errorf("%w: HUB_JWKS_URL must be an absolute http(s) URL", ErrInvalid)
+	if !trustedJWKSURL(jwks) {
+		return Config{}, fmt.Errorf("%w: HUB_JWKS_URL must be an https URL or http on a loopback host", ErrInvalid)
 	}
 
 	aud, err := required(get, "HUB_AUDIENCE")
@@ -67,6 +67,28 @@ func Load(getenv func(string) string) (Config, error) {
 		Audience: aud,
 		Issuer:   iss,
 	}, nil
+}
+
+// trustedJWKSURL allows https anywhere and plain http only to loopback (the
+// local hub), so keys cannot be fetched in clear text from the network.
+func trustedJWKSURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	switch u.Scheme {
+	case "https":
+		return true
+	case "http":
+		h := u.Hostname()
+		if h == "localhost" {
+			return true
+		}
+		ip := net.ParseIP(h)
+		return ip != nil && ip.IsLoopback()
+	default:
+		return false
+	}
 }
 
 func required(get func(string) string, key string) (string, error) {

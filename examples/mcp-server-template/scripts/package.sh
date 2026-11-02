@@ -7,7 +7,8 @@
 #   service-directory_<os>_<arch>.tar.gz   one executable `mcp-server` at the root (0755)
 #   checksums.txt                          sha256 of every archive
 # and prints the catalogue `artifacts:` snippet to paste into the catalogue PR.
-# Builds are reproducible: CGO off, -trimpath, no build id, fixed archive mtime.
+# Builds are reproducible: pinned toolchain (go.mod), CGO off, -trimpath, no build id,
+# fixed archive mtime.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -19,7 +20,9 @@ fi
 
 name="service-directory"
 tag="${name}-v${version}"
-base_url="https://github.com/Arif-Karim/mcp-hub/releases/download/${tag}"
+# Teams copying this template: GITHUB_REPOSITORY is set in Actions; set it locally too.
+repo="${GITHUB_REPOSITORY:-Arif-Karim/mcp-hub}"
+base_url="https://github.com/${repo}/releases/download/${tag}"
 platforms=(darwin/arm64 darwin/amd64 linux/amd64)
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 

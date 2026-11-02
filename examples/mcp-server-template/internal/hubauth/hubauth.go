@@ -2,8 +2,9 @@
 // every request it proxies to an MCP server.
 //
 // Tokens are EdDSA (Ed25519) only. The signing key is looked up by "kid" in the
-// hub's JWKS, which is cached and refetched on an unknown kid at most once per
-// MinRefetchInterval. "iss", "aud", "exp" and "nbf" are checked with Leeway.
+// hub's JWKS, which is cached for MaxKeyAge and refetched on an unknown kid at
+// most once per MinRefetchInterval (FailureBackoff after a failed fetch).
+// "iss", "aud", "exp" and "nbf" are checked with Leeway.
 package hubauth
 
 import (

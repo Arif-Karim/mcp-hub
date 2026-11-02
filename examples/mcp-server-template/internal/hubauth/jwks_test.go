@@ -16,8 +16,8 @@ import (
 	"time"
 )
 
-// fakeIdP is a JWKS endpoint whose key set, status and latency tests can change.
-type fakeIdP struct {
+// fakeIDP is a JWKS endpoint whose key set, status and latency tests can change.
+type fakeIDP struct {
 	*httptest.Server
 	mu      sync.Mutex
 	keys    map[string]ed25519.PublicKey
@@ -26,9 +26,9 @@ type fakeIdP struct {
 	fetches atomic.Int32
 }
 
-func newFakeIdP(t *testing.T) *fakeIdP {
+func newFakeIDP(t *testing.T) *fakeIDP {
 	t.Helper()
-	f := &fakeIdP{keys: map[string]ed25519.PublicKey{}, status: http.StatusOK}
+	f := &fakeIDP{keys: map[string]ed25519.PublicKey{}, status: http.StatusOK}
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		f.fetches.Add(1)
 		f.mu.Lock()
@@ -53,7 +53,7 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 	return f
 }
 
-func (f *fakeIdP) set(fn func(f *fakeIdP)) {
+func (f *fakeIDP) set(fn func(f *fakeIDP)) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	fn(f)
@@ -81,15 +81,15 @@ func newTestJWKS(url string) (*JWKS, *clock) {
 // A failed fetch must not lock auth out for the full refetch interval.
 func TestJWKSFailedFetchRetriesAfterShortBackoff(t *testing.T) {
 	pub, _ := newKey(t)
-	idp := newFakeIdP(t)
-	idp.set(func(f *fakeIdP) { f.status = http.StatusServiceUnavailable; f.keys["k"] = pub })
+	idp := newFakeIDP(t)
+	idp.set(func(f *fakeIDP) { f.status = http.StatusServiceUnavailable; f.keys["k"] = pub })
 	j, clk := newTestJWKS(idp.URL)
 	ctx := context.Background()
 
 	if _, err := j.Key(ctx, "k"); !errors.Is(err, ErrJWKSUnavailable) {
 		t.Fatalf("err = %v, want ErrJWKSUnavailable", err)
 	}
-	idp.set(func(f *fakeIdP) { f.status = http.StatusOK })
+	idp.set(func(f *fakeIDP) { f.status = http.StatusOK })
 
 	// Within the failure backoff: no new fetch.
 	if _, err := j.Key(ctx, "k"); err == nil {
@@ -113,15 +113,15 @@ func TestJWKSFailedFetchRetriesAfterShortBackoff(t *testing.T) {
 func TestJWKSKeysExpireAndRetiredKeysAreDropped(t *testing.T) {
 	oldPub, _ := newKey(t)
 	newPub, _ := newKey(t)
-	idp := newFakeIdP(t)
-	idp.set(func(f *fakeIdP) { f.keys["old"] = oldPub })
+	idp := newFakeIDP(t)
+	idp.set(func(f *fakeIDP) { f.keys["old"] = oldPub })
 	j, clk := newTestJWKS(idp.URL)
 	ctx := context.Background()
 
 	if _, err := j.Key(ctx, "old"); err != nil {
 		t.Fatal(err)
 	}
-	idp.set(func(f *fakeIdP) { delete(f.keys, "old"); f.keys["new"] = newPub })
+	idp.set(func(f *fakeIDP) { delete(f.keys, "old"); f.keys["new"] = newPub })
 
 	clk.add(MaxKeyAge - time.Second)
 	if _, err := j.Key(ctx, "old"); err != nil {
@@ -143,14 +143,14 @@ func TestJWKSKeysExpireAndRetiredKeysAreDropped(t *testing.T) {
 // rejecting every request (and retry after the short backoff).
 func TestJWKSServesCachedKeysWhenRefreshFails(t *testing.T) {
 	pub, _ := newKey(t)
-	idp := newFakeIdP(t)
-	idp.set(func(f *fakeIdP) { f.keys["k"] = pub })
+	idp := newFakeIDP(t)
+	idp.set(func(f *fakeIDP) { f.keys["k"] = pub })
 	j, clk := newTestJWKS(idp.URL)
 	ctx := context.Background()
 	if _, err := j.Key(ctx, "k"); err != nil {
 		t.Fatal(err)
 	}
-	idp.set(func(f *fakeIdP) { f.status = http.StatusInternalServerError })
+	idp.set(func(f *fakeIDP) { f.status = http.StatusInternalServerError })
 	clk.add(MaxKeyAge)
 	if got, err := j.Key(ctx, "k"); err != nil || !bytes.Equal(got, pub) {
 		t.Fatalf("cached key during outage: %x, %v", got, err)
@@ -164,8 +164,8 @@ func TestJWKSServesCachedKeysWhenRefreshFails(t *testing.T) {
 // refetch is in flight, and concurrent misses share one fetch.
 func TestJWKSFetchDoesNotBlockCachedLookupsAndIsShared(t *testing.T) {
 	pub, _ := newKey(t)
-	idp := newFakeIdP(t)
-	idp.set(func(f *fakeIdP) { f.keys["k"] = pub })
+	idp := newFakeIDP(t)
+	idp.set(func(f *fakeIDP) { f.keys["k"] = pub })
 	j, clk := newTestJWKS(idp.URL)
 	ctx := context.Background()
 	if _, err := j.Key(ctx, "k"); err != nil {
@@ -174,7 +174,7 @@ func TestJWKSFetchDoesNotBlockCachedLookupsAndIsShared(t *testing.T) {
 	clk.add(MinRefetchInterval)
 
 	gate := make(chan struct{})
-	idp.set(func(f *fakeIdP) { f.gate = gate })
+	idp.set(func(f *fakeIDP) { f.gate = gate })
 	var wg sync.WaitGroup
 	for range 5 {
 		wg.Add(1)
@@ -210,8 +210,8 @@ func TestJWKSFetchDoesNotBlockCachedLookupsAndIsShared(t *testing.T) {
 // A cancelled request must not poison the shared fetch for everyone else.
 func TestJWKSFetchIgnoresCallerCancellation(t *testing.T) {
 	pub, _ := newKey(t)
-	idp := newFakeIdP(t)
-	idp.set(func(f *fakeIdP) { f.keys["k"] = pub })
+	idp := newFakeIDP(t)
+	idp.set(func(f *fakeIDP) { f.keys["k"] = pub })
 	j, _ := newTestJWKS(idp.URL)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -258,8 +258,8 @@ func TestJWKSHTTPError(t *testing.T) {
 // A misconfigured or hijacked JWKS URL must not redirect key trust to another host.
 func TestJWKSRefusesCrossHostRedirect(t *testing.T) {
 	pub, _ := newKey(t)
-	other := newFakeIdP(t)
-	other.set(func(f *fakeIdP) { f.keys["k"] = pub })
+	other := newFakeIDP(t)
+	other.set(func(f *fakeIDP) { f.keys["k"] = pub })
 	redirector := httptest.NewServer(http.RedirectHandler(other.URL, http.StatusFound))
 	defer redirector.Close()
 	if _, err := NewJWKS(redirector.URL, nil).Key(context.Background(), "k"); !errors.Is(err, ErrJWKSUnavailable) {
