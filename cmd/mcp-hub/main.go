@@ -105,8 +105,8 @@ func serve(args []string) error {
 		_ = ln.Close()
 		return err
 	}
+	// Deferred first, so it runs after Shutdown: drain enables, stop processes.
 	defer func() { _ = d.Close() }()
-	d.Restore(ctx)
 
 	srv := &http.Server{
 		Handler:           d.Handler(),
@@ -116,9 +116,12 @@ func serve(args []string) error {
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("mcp-hub listening", "addr", *addr, "version", version.Version, "home", filepath.Dir(paths.Ledger),
-			"claudeConfig", paths.ClaudeConfig, "catalogue", source, "enabled", d.Hub.EnabledCount())
+			"claudeConfig", paths.ClaudeConfig, "catalogue", source)
 		errCh <- srv.Serve(ln)
 	}()
+	// Restore in the background so the API and UI answer at once; servers show
+	// "stopped" until they are back. Shutdown cancels ctx, aborting it.
+	go d.Restore(ctx)
 
 	select {
 	case err := <-errCh:
