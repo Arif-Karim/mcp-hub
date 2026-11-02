@@ -22,6 +22,9 @@ echo "total coverage: ${total}%"
 awk -v t="$total" -v m="$COVERAGE_MIN" 'BEGIN { exit (t+0 >= m+0) ? 0 : 1 }' \
   || { echo "coverage ${total}% is below ${COVERAGE_MIN}%"; exit 1; }
 
+step "harness hooks: guard table test"
+scripts/hooks/guard-bash_test.sh
+
 step "govulncheck"
 tool govulncheck ./...
 
