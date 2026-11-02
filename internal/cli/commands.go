@@ -66,7 +66,7 @@ func search(ctx context.Context, env Env, o opts) error {
 	if o.kind != "" {
 		q.Set("kind", o.kind)
 	}
-	body, err := env.call(ctx, http.MethodGet, "/catalogue", q, readTimeout)
+	body, err := env.request(ctx, o, http.MethodGet, "/catalogue", q, readTimeout)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func info(ctx context.Context, env Env, o opts) error {
 	if err := checkID(id); err != nil {
 		return err
 	}
-	body, err := env.call(ctx, http.MethodGet, "/catalogue/"+id, nil, readTimeout)
+	body, err := env.request(ctx, o, http.MethodGet, "/catalogue/"+id, nil, readTimeout)
 	if err != nil {
 		return err
 	}
@@ -224,11 +224,7 @@ func toggle(ctx context.Context, env Env, o opts, action string, timeout time.Du
 	if err := checkID(id); err != nil {
 		return nil, err
 	}
-	body, err := env.call(ctx, http.MethodPost, "/servers/"+id+"/"+action, nil, timeout)
-	var api *apiError
-	if o.json && errors.As(err, &api) {
-		writeRaw(env.Stdout, api.raw)
-	}
+	body, err := env.request(ctx, o, http.MethodPost, "/servers/"+id+"/"+action, nil, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +249,7 @@ type statusBody struct {
 }
 
 func status(ctx context.Context, env Env, o opts) error {
-	body, err := env.call(ctx, http.MethodGet, "/status", nil, readTimeout)
+	body, err := env.request(ctx, o, http.MethodGet, "/status", nil, readTimeout)
 	if err != nil {
 		return err
 	}

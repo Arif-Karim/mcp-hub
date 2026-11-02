@@ -85,6 +85,17 @@ func (e Env) call(ctx context.Context, method, path string, query url.Values, ti
 	return nil, env.Error
 }
 
+// request is call for a command: with --json a contract error's raw body is
+// also printed to stdout, so scripts and the skill always get JSON.
+func (e Env) request(ctx context.Context, o opts, method, path string, query url.Values, timeout time.Duration) ([]byte, error) {
+	body, err := e.call(ctx, method, path, query, timeout)
+	var api *apiError
+	if o.json && errors.As(err, &api) {
+		writeRaw(e.Stdout, api.raw)
+	}
+	return body, err
+}
+
 // decode parses a 2xx body into v.
 func decode(body []byte, v any) error {
 	if err := json.Unmarshal(body, v); err != nil {
