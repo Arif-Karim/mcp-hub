@@ -14,14 +14,14 @@ import (
 func loopbackGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !httpx.IsLoopbackHost(r.Host) {
-			slog.Warn("rejected non-loopback Host", "host", r.Host, "path", r.URL.Path)
+			slog.Warn("rejected non-loopback Host", "host", httpx.LogSafe(r.Host), "path", httpx.LogSafe(r.URL.Path))
 			httpx.WriteError(w, http.StatusForbidden, httpx.CodeBadRequest, "host not allowed")
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			if origins := r.Header.Values("Origin"); len(origins) > 0 &&
 				(len(origins) > 1 || !httpx.IsLoopbackOrigin(origins[0])) {
-				slog.Warn("rejected cross-site request", "origin", r.Header.Get("Origin"), "path", r.URL.Path)
+				slog.Warn("rejected cross-site request", "origin", httpx.LogSafe(r.Header.Get("Origin")), "path", httpx.LogSafe(r.URL.Path))
 				httpx.WriteError(w, http.StatusForbidden, httpx.CodeBadRequest, "cross-site request not allowed")
 				return
 			}

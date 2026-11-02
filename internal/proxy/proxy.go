@@ -91,7 +91,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	if !httpx.IsLoopbackHost(r.Host) || !allowedOrigin(r.Header) {
-		slog.Warn("proxy rejected non-loopback request", "host", r.Host, "origin", r.Header.Get("Origin"))
+		slog.Warn("proxy rejected non-loopback request", "host", httpx.LogSafe(r.Host), "origin", httpx.LogSafe(r.Header.Get("Origin")))
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeBadRequest, "request must come from a loopback origin")
 		return
 	}
@@ -137,7 +137,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	target, err := url.Parse(up.URL)
 	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
-		slog.Error("proxy upstream url invalid", "server", id)
+		slog.Error("proxy upstream url invalid", "server", httpx.LogSafe(id))
 		httpx.WriteError(sw, http.StatusBadGateway, httpx.CodeInternal, "upstream URL is invalid")
 		return
 	}
@@ -158,17 +158,17 @@ func (h *handler) authorization(id string, mode catalogue.AuthMode, target *url.
 		return "", true
 	case catalogue.AuthHubJWT:
 		if target.Scheme != "https" && !httpx.IsLoopbackName(target.Hostname()) {
-			slog.Error("proxy refused to send hub token over plaintext http", "server", id)
+			slog.Error("proxy refused to send hub token over plaintext http", "server", httpx.LogSafe(id))
 			return "", false
 		}
 		tok, err := h.cfg.Tokens.Issue(h.cfg.User, id, h.cfg.TokenTTL)
 		if err != nil {
-			slog.Error("proxy token issue failed", "server", id, "err", err)
+			slog.Error("proxy token issue failed", "server", httpx.LogSafe(id), "err", httpx.LogSafe(err.Error()))
 			return "", false
 		}
 		return "Bearer " + tok, true
 	default:
-		slog.Error("proxy unknown auth mode", "server", id, "auth", string(mode))
+		slog.Error("proxy unknown auth mode", "server", httpx.LogSafe(id), "auth", httpx.LogSafe(string(mode)))
 		return "", false
 	}
 }
