@@ -113,7 +113,11 @@ func (s *Service) Enable(ctx context.Context, id string) (catalogue.InstallState
 		return s.State(id), err
 	}
 	if err := s.enable(ctx, e, s.cfg.Now()); err != nil {
-		s.update(id, func(r *record) { r.lastError = err.Error() })
+		// A server that was already enabled and healthy keeps serving: the
+		// failed call changed nothing it depends on. Otherwise show why.
+		if _, healthy := s.Resolve(id); !healthy {
+			s.update(id, func(r *record) { r.lastError = err.Error() })
+		}
 		return s.State(id), err
 	}
 	s.cfg.Logger.Info("server enabled", "server", id, "kind", string(e.Kind))
