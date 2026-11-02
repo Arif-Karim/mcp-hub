@@ -88,3 +88,7 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   URL changes, a typed `PartialRemoveError`, and `O_EXCL` + fsync backups.
 - The new frozen-clock backup test caught a second bug in the first fix attempt: after pruning, the unsuffixed name was
   reused and sorted *first*, so the newest backup got pruned next. Fixed by always naming a backup to sort after the newest.
+- Mutation after review: `verify.sh --mutation` reported 77 killed / 0 lived / **21 timed out** (100%) under load —
+  not trusted. Re-ran single-worker: 88 killed / 8 lived / 2 timed out → **91.7%**. The 2 timeouts are negated
+  lock-error checks (deadlock = detected); the 8 survivors are unobservable fsync/close/chmod/rename/dir-sync error
+  branches plus the equivalent retry-counter mutant.
