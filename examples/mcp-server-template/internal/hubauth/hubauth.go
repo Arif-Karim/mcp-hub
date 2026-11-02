@@ -82,7 +82,7 @@ func Middleware(v *Verifier, logger *slog.Logger, next http.Handler) http.Handle
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sub, err := authenticate(r, v)
 		if err != nil {
-			logger.Warn("request rejected", "reason", err.Error(), "method", r.Method, "path", r.URL.Path)
+			logger.Warn("request rejected", "reason", logSafe(err.Error()), "method", logSafe(r.Method), "path", logSafe(r.URL.Path))
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 			w.WriteHeader(http.StatusUnauthorized)
@@ -104,4 +104,10 @@ func authenticate(r *http.Request, v *Verifier) (string, error) {
 		return "", fmt.Errorf("%w: Authorization is not a bearer token", ErrUnauthorized)
 	}
 	return v.Verify(r.Context(), tok)
+}
+
+// logSafe strips CR/LF from request-derived values before logging (log injection).
+func logSafe(s string) string {
+	s = strings.ReplaceAll(s, "\n", "")
+	return strings.ReplaceAll(s, "\r", "")
 }
