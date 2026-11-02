@@ -1,0 +1,46 @@
+name: codeql
+
+# Static security analysis (SAST) for Go and the Vue/TS UI. Complements the
+# per-PR verify job (gosec, govulncheck, gitleaks): CodeQL does cross-function
+# taint tracking, e.g. request data flowing into file paths or HTTP requests.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 19 * * 0" # weekly, picks up newly published queries
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: autobuild
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        if: matrix.language == 'go'
+        with:
+          go-version-file: go.mod
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
