@@ -92,3 +92,18 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   not trusted. Re-ran single-worker: 88 killed / 8 lived / 2 timed out → **91.7%**. The 2 timeouts are negated
   lock-error checks (deadlock = detected); the 8 survivors are unobservable fsync/close/chmod/rename/dir-sync error
   branches plus the equivalent retry-counter mutant.
+
+### Lane E (reference MCP server template + publish pipeline)
+- Builder subagent in an isolated worktree; two red → green pairs (server: config/auth/tools; packaging: archive
+  writer) visible in history. Tool tests drive a **real SDK MCP client** over HTTP through the auth middleware.
+- Checked the Go SDK v1.8.0 API in the module cache (`go doc`, source) rather than guessing. Found the SDK's
+  `RequireBearerToken` returns plain-text 401s, so hub verification lives in our own middleware (JSON 401,
+  logged reason, never the token) and an SDK adapter only lifts the verified `sub` into `TokenInfo` — tools see
+  the caller and the SDK binds each MCP session to that user.
+- Auth tests cover missing/non-bearer/malformed, HS256, `alg:none`, wrong aud/iss, expired/nbf beyond 30s leeway,
+  missing exp/sub, unknown kid, wrong key; JWKS refetch on unknown kid is rate-limited (clock-injected test).
+- Packaging is reproducible: CGO off, `-trimpath`, empty build id, Go tar writer with fixed metadata — two local
+  runs of `package.sh 0.1.0` produced identical sha256s. Smoke-tested the packaged binary with `cmd/devtoken`
+  (healthz 200, no token 401, initialize OK, SIGTERM → clean shutdown).
+- Intervention: gosec G703/G704 taint findings on the JWKS fetch (operator-configured URL) and the build-time
+  archiver; suppressed inline with justification rather than weakening the lint config.
