@@ -207,6 +207,21 @@ func TestDaemonRestoreLogsFailures(t *testing.T) {
 	}
 }
 
+func TestDaemonCloseRefusesEnable(t *testing.T) {
+	f := newFixture(t, catalogue.ApprovalApproved)
+	d := f.start(t)
+	if err := d.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	code, body := call(t, d.Handler(), http.MethodPost, "/api/v1/servers/open/enable", "")
+	if code != http.StatusBadGateway || !strings.Contains(body, `"code":"start_failed"`) || !strings.Contains(body, "shutting down") {
+		t.Fatalf("enable after Close = %d %s", code, body)
+	}
+	if _, err := os.Stat(f.claude); !os.IsNotExist(err) {
+		t.Fatal("claude config written after Close")
+	}
+}
+
 func TestDaemonNewErrors(t *testing.T) {
 	f := newFixture(t, catalogue.ApprovalApproved)
 	for name, mutate := range map[string]func(*daemon.Config){
