@@ -164,3 +164,6 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   (macOS `tar` had added an AppleDouble `._mcp-server`). Each as a red → green pair.
 - Lesson: a fake that exits for an unrelated reason makes a timeout test pass for the wrong reason — assert the
   intermediate state (child alive before, gone after), not only the final error.
+- After the review round (rebased on #13/#14/#16): `verify.sh --mutation` passes. cmd/mcp-hub 18/0, daemon 9/1 (90%;
+  the survivor is the drain-timeout warning log), hub 39/0, runner 25 killed / 4 lived / 3 timed out (86.2%, up from
+  80.8%), server 25/0. Coverage 92.8%; e2e runs inside verify.
