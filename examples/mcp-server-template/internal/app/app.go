@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	sdkauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -16,6 +17,9 @@ import (
 
 // MCPPath is where the streamable HTTP MCP endpoint is served.
 const MCPPath = "/mcp"
+
+// sessionTimeout is a stub (red).
+var sessionTimeout = 30 * time.Minute
 
 // Handler returns the root handler.
 func Handler(v *hubauth.Verifier, logger *slog.Logger) http.Handler {

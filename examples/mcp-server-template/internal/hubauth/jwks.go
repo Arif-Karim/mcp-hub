@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,15 @@ import (
 
 // MinRefetchInterval rate-limits JWKS refetches triggered by unknown kids.
 const MinRefetchInterval = 30 * time.Second
+
+// Stubs (red).
+const (
+	FailureBackoff = 30 * time.Second
+	MaxKeyAge      = 1000 * time.Hour
+)
+
+// ErrJWKSUnavailable is a stub (red).
+var ErrJWKSUnavailable = errors.New("jwks unavailable")
 
 // KeySource resolves a key id to an Ed25519 public key.
 type KeySource interface {

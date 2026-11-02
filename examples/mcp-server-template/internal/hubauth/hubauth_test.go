@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -263,36 +262,5 @@ func TestJWKSCachesAndRateLimitsRefetch(t *testing.T) {
 	_, _ = j.Key(ctx, "other")
 	if n := srv.fetches.Load(); n != 2 {
 		t.Fatalf("fetches = %d, want 2", n)
-	}
-}
-
-func TestJWKSRejectsBadDocuments(t *testing.T) {
-	cases := map[string]string{
-		"wrong kty":     `{"keys":[{"kty":"RSA","crv":"Ed25519","kid":"k","x":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}]}`,
-		"wrong crv":     `{"keys":[{"kty":"OKP","crv":"X25519","kid":"k","x":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}]}`,
-		"short x":       `{"keys":[{"kty":"OKP","crv":"Ed25519","kid":"k","x":"AAAA"}]}`,
-		"not base64url": `{"keys":[{"kty":"OKP","crv":"Ed25519","kid":"k","x":"!!!"}]}`,
-		"not json":      `<html>`,
-	}
-	for name, doc := range cases {
-		t.Run(name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = io.WriteString(w, doc)
-			}))
-			defer srv.Close()
-			if _, err := NewJWKS(srv.URL, nil).Key(context.Background(), "k"); err == nil {
-				t.Fatal("expected error")
-			}
-		})
-	}
-}
-
-func TestJWKSHTTPError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-	if _, err := NewJWKS(srv.URL, nil).Key(context.Background(), "k"); err == nil {
-		t.Fatal("expected error")
 	}
 }

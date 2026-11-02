@@ -270,6 +270,21 @@ func TestGetRunbook(t *testing.T) {
 	}
 }
 
+// Sessions abandoned without DELETE (e.g. Claude Code killed) must be reaped.
+func TestIdleSessionsExpire(t *testing.T) {
+	old := sessionTimeout
+	sessionTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { sessionTimeout = old })
+
+	cs := newEnv(t).connect(t)
+	call(t, cs, "find_service", map[string]any{"query": "ledger"})
+	time.Sleep(800 * time.Millisecond)
+	_, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "find_service", Arguments: map[string]any{"query": "ledger"}})
+	if err == nil {
+		t.Fatal("idle session still usable after SessionTimeout")
+	}
+}
+
 func TestGetRunbookUnknownIsToolError(t *testing.T) {
 	cs := newEnv(t).connect(t)
 	res := call(t, cs, "get_runbook", map[string]any{"service": "no-such-service"})

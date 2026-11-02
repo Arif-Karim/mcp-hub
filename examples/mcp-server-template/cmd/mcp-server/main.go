@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +17,9 @@ import (
 	"github.com/Arif-Karim/mcp-hub/examples/mcp-server-template/internal/config"
 	"github.com/Arif-Karim/mcp-hub/examples/mcp-server-template/internal/hubauth"
 )
+
+// shutdownGrace bounds how long in-flight requests get after SIGTERM.
+const shutdownGrace = 10 * time.Second
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -35,20 +39,27 @@ func run(logger *slog.Logger) error {
 		Issuer:   cfg.Issuer,
 		Audience: cfg.Audience,
 	}
-	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           app.Handler(v, logger),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
 
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", cfg.Addr)
+	if err != nil {
+		return err
+	}
+	logger.Info("listening", "addr", cfg.Addr, "audience", cfg.Audience)
+	return serve(ctx, ln, app.Handler(v, logger), logger)
+}
+
+// serve runs h on ln until ctx is cancelled, then shuts down gracefully.
+func serve(ctx context.Context, ln net.Listener, h http.Handler, logger *slog.Logger) error {
+	srv := &http.Server{
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
 	errc := make(chan error, 1)
-	go func() {
-		logger.Info("listening", "addr", cfg.Addr, "audience", cfg.Audience)
-		errc <- srv.ListenAndServe()
-	}()
+	go func() { errc <- srv.Serve(ln) }()
 
 	select {
 	case err := <-errc:
@@ -56,7 +67,7 @@ func run(logger *slog.Logger) error {
 	case <-ctx.Done():
 	}
 	logger.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return err

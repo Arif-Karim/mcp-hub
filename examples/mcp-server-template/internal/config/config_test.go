@@ -46,6 +46,21 @@ func TestLoadIssuerOverride(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsHTTPSOrLoopbackJWKS(t *testing.T) {
+	for _, u := range []string{
+		"https://idp.example.test/.well-known/jwks.json",
+		"http://127.0.0.1:7420/.well-known/jwks.json",
+		"http://localhost:7420/.well-known/jwks.json",
+		"http://[::1]:7420/.well-known/jwks.json",
+	} {
+		m := valid()
+		m["HUB_JWKS_URL"] = u
+		if _, err := Load(env(m)); err != nil {
+			t.Errorf("%s: %v", u, err)
+		}
+	}
+}
+
 func TestLoadErrorsNameTheVariable(t *testing.T) {
 	cases := []struct {
 		name, key, value, wantVar string
@@ -57,6 +72,7 @@ func TestLoadErrorsNameTheVariable(t *testing.T) {
 		{"missing jwks", "HUB_JWKS_URL", "", "HUB_JWKS_URL"},
 		{"jwks not a url", "HUB_JWKS_URL", "not a url", "HUB_JWKS_URL"},
 		{"jwks bad scheme", "HUB_JWKS_URL", "file:///etc/jwks.json", "HUB_JWKS_URL"},
+		{"jwks plain http off-host", "HUB_JWKS_URL", "http://idp.example.test/jwks.json", "HUB_JWKS_URL"},
 		{"missing audience", "HUB_AUDIENCE", "  ", "HUB_AUDIENCE"},
 	}
 	for _, tc := range cases {
