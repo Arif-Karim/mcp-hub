@@ -94,8 +94,9 @@ func (l *Log) Recent(limit int) []Event {
 	defer l.mu.Unlock()
 	limit = min(max(limit, 0), l.n)
 	out := make([]Event, 0, limit)
-	for k := 1; k <= limit; k++ {
-		out = append(out, l.ring[(l.next-k+len(l.ring))%len(l.ring)])
+	// range (not k++) so a mutated loop step can't run unbounded and exhaust memory.
+	for k := range limit {
+		out = append(out, l.ring[(l.next-1-k+len(l.ring))%len(l.ring)])
 	}
 	return out
 }
