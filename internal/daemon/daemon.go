@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/Arif-Karim/mcp-hub/internal/audit"
 	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
@@ -48,7 +50,13 @@ type Daemon struct {
 	runner  *runner.Runner
 	audit   *audit.Log
 	logger  *slog.Logger
+
+	closeOnce sync.Once
+	closeErr  error
 }
+
+// DrainTimeout bounds how long Close waits for in-flight enables/restores.
+const DrainTimeout = 15 * time.Second
 
 // New creates MCP_HUB_HOME (0700) and everything under it.
 func New(cfg Config) (*Daemon, error) {
@@ -116,8 +124,19 @@ func (d *Daemon) Restore(ctx context.Context) {
 	}
 }
 
-// Close stops every local server and closes the audit log.
+// Close shuts down in an order that leaves no server process behind: refuse
+// new enables, wait (bounded) for in-flight ones, stop every process (the
+// runner also aborts any start still running), then close the audit log.
+// Safe to call more than once.
 func (d *Daemon) Close() error {
-	d.runner.StopAll()
-	return d.audit.Close()
+	d.closeOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), DrainTimeout)
+		defer cancel()
+		if err := d.Hub.Close(ctx); err != nil {
+			d.logger.Warn("in-flight enables still running at shutdown; stopping processes anyway", "err", err)
+		}
+		d.runner.StopAll()
+		d.closeErr = d.audit.Close()
+	})
+	return d.closeErr
 }
