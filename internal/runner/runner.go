@@ -264,3 +264,9 @@ func orDefault(d, def time.Duration) time.Duration {
 	}
 	return def
 }
+
+// Done is closed once the process has exited.
+func (p *Proc) Done() <-chan struct{} { return p.done }
+
+// ErrClosed: the runner has been stopped (daemon shutdown); it wraps ErrStartFailed.
+var ErrClosed = fmt.Errorf("%w: runner closed", ErrStartFailed)

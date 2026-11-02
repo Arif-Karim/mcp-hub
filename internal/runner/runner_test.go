@@ -7,7 +7,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"regexp"
+	"strconv"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -32,23 +35,37 @@ func TestMain(m *testing.M) {
 
 func fakeServer(mode string) {
 	fmt.Println("fake server starting:", mode, "home="+os.Getenv("HOME"), "secret="+os.Getenv("RUNNER_TEST_SECRET"), "extra="+os.Getenv("RUNNER_TEST_EXTRA"))
+	fmt.Printf("%s pid=%d\n", mode, os.Getpid())
 	switch mode {
 	case "never-healthy":
-		select {}
+		// time.Sleep, not select{}: a goroutine-free select{} trips Go's
+		// deadlock detector and the "unhealthy" child would exit at once.
+		time.Sleep(time.Hour)
+	case "grandchild":
+		signal.Ignore(syscall.SIGTERM)
+		time.Sleep(time.Hour)
+	case "with-grandchild":
+		// Spawn a SIGTERM-ignoring grandchild in our process group, then serve.
+		exe, _ := os.Executable()
+		gc := exec.Command(exe) //nolint:gosec,noctx // test re-exec of itself
+		gc.Env = append(os.Environ(), fakeEnv+"=grandchild")
+		gc.Stdout, gc.Stderr = os.Stdout, os.Stderr
+		if err := gc.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, "grandchild:", err)
+			os.Exit(4)
+		}
 	case "ignore-term":
 		signal.Ignore(syscall.SIGTERM)
-	case "crash-after":
-		go func() {
-			time.Sleep(300 * time.Millisecond)
-			fmt.Fprintln(os.Stderr, "fake server crashing")
-			os.Exit(3)
-		}()
 	case "exit-now":
 		fmt.Fprintln(os.Stderr, "boom: missing config")
 		os.Exit(2)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("/crash", func(http.ResponseWriter, *http.Request) {
+		fmt.Fprintln(os.Stderr, "fake server crashing")
+		os.Exit(3)
+	})
 	mux.HandleFunc("/cwd", func(w http.ResponseWriter, _ *http.Request) {
 		wd, _ := os.Getwd()
 		_, _ = w.Write([]byte(wd))
@@ -95,6 +112,28 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// pidFromLog returns the pid a fake printed as "<mode> pid=N".
+func pidFromLog(t *testing.T, path, mode string) int {
+	t.Helper()
+	var pid int
+	waitUntil(t, mode+" pid in log", func() bool {
+		data, _ := os.ReadFile(path) //nolint:gosec // test temp path
+		m := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(mode) + ` pid=(\d+)`).FindSubmatch(data)
+		if m == nil {
+			return false
+		}
+		pid, _ = strconv.Atoi(string(m[1]))
+		return true
+	})
+	return pid
+}
+
+// gone reports whether pid no longer exists. An orphan is reaped by init
+// shortly after it dies, so callers poll.
+func gone(pid int) bool {
+	return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH)
 }
 
 func readLog(t *testing.T, path string) string {
@@ -176,7 +215,7 @@ func TestStartHealthy(t *testing.T) {
 }
 
 func TestStartNeverHealthy(t *testing.T) {
-	r, _ := newRunner(t)
+	r, logs := newRunner(t)
 	r.HealthTimeout = 400 * time.Millisecond
 	start := time.Now()
 	p, err := r.Start(context.Background(), "slow", self(t), map[string]string{fakeEnv: "never-healthy"})
@@ -194,6 +233,10 @@ func TestStartNeverHealthy(t *testing.T) {
 	}
 	if _, ok := r.Get("slow"); ok {
 		t.Fatal("failed process still tracked")
+	}
+	// The live-but-unhealthy child was killed and reaped before Start returned.
+	if pid := pidFromLog(t, filepath.Join(logs, "slow.log"), "never-healthy"); !gone(pid) {
+		t.Fatalf("unhealthy child %d still exists after Start returned", pid)
 	}
 }
 
@@ -227,7 +270,7 @@ func TestStartRejectsUnsafeID(t *testing.T) {
 }
 
 func TestStartCancelledContext(t *testing.T) {
-	r, _ := newRunner(t)
+	r, logs := newRunner(t)
 	r.HealthTimeout = 10 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -235,6 +278,12 @@ func TestStartCancelledContext(t *testing.T) {
 	_, err := r.Start(ctx, "slow", self(t), map[string]string{fakeEnv: "never-healthy"})
 	if !errors.Is(err, runner.ErrStartFailed) || time.Since(start) > 3*time.Second {
 		t.Fatalf("err = %v after %v; want prompt ErrStartFailed", err, time.Since(start))
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the context error wrapped", err)
+	}
+	if pid := pidFromLog(t, filepath.Join(logs, "slow.log"), "never-healthy"); !gone(pid) {
+		t.Fatalf("child %d still exists after cancelled Start", pid)
 	}
 }
 
@@ -249,11 +298,19 @@ func TestDefaultTimeouts(t *testing.T) {
 
 func TestCrashAfterStart(t *testing.T) {
 	r, logs := newRunner(t)
-	p, err := r.Start(context.Background(), "crashy", self(t), map[string]string{fakeEnv: "crash-after"})
+	p, err := r.Start(context.Background(), "crashy", self(t), map[string]string{fakeEnv: "healthy"})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	waitUntil(t, "process exit", func() bool { return !p.Running() })
+	_, _ = get(t, p.URL()+"/crash")
+	select {
+	case <-p.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("process did not exit after /crash")
+	}
+	if p.Running() {
+		t.Fatal("Running after Done closed")
+	}
 	if p.Err() == nil || !strings.Contains(p.Err().Error(), "exit status 3") {
 		t.Fatalf("Err = %v, want exit status 3", p.Err())
 	}
@@ -305,5 +362,98 @@ func TestStopAll(t *testing.T) {
 	}
 	if _, ok := r.Get("a1"); ok {
 		t.Fatal("StopAll left a process tracked")
+	}
+}
+
+func TestStopKillsWholeProcessGroup(t *testing.T) {
+	r, logs := newRunner(t)
+	r.StopTimeout = 5 * time.Second
+	p, err := r.Start(context.Background(), "family", self(t), map[string]string{fakeEnv: "with-grandchild"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	gc := pidFromLog(t, filepath.Join(logs, "family.log"), "grandchild")
+	if gone(gc) {
+		t.Fatal("grandchild not running before Stop")
+	}
+	start := time.Now()
+	if err := r.Stop("family"); err != nil {
+		t.Fatal(err)
+	}
+	// The leader exits on SIGTERM at once; the SIGTERM-ignoring grandchild must
+	// not be orphaned, and Stop must not wait out the whole grace period for it.
+	waitUntil(t, "grandchild killed", func() bool { return gone(gc) })
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("Stop + reap took %v", d)
+	}
+	if code, _ := get(t, p.URL()+"/healthz"); code != 0 {
+		t.Fatal("port still served after Stop")
+	}
+}
+
+func TestCrashedLeaderTakesGroupWithIt(t *testing.T) {
+	r, logs := newRunner(t)
+	p, err := r.Start(context.Background(), "family", self(t), map[string]string{fakeEnv: "with-grandchild"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	gc := pidFromLog(t, filepath.Join(logs, "family.log"), "grandchild")
+	_, _ = get(t, p.URL()+"/crash")
+	<-p.Done()
+	waitUntil(t, "grandchild of a crashed server killed", func() bool { return gone(gc) })
+}
+
+func TestStartDoesNotBlockOtherIDs(t *testing.T) {
+	r, _ := newRunner(t)
+	r.HealthTimeout = 3 * time.Second
+	slow := make(chan error, 1)
+	go func() {
+		_, err := r.Start(context.Background(), "slow", self(t), map[string]string{fakeEnv: "never-healthy"})
+		slow <- err
+	}()
+	time.Sleep(200 * time.Millisecond) // let the slow start reach its health wait
+	begin := time.Now()
+	if _, ok := r.Get("slow"); ok {
+		t.Fatal("unhealthy process visible before it is healthy")
+	}
+	p, err := r.Start(context.Background(), "fast", self(t), map[string]string{fakeEnv: "healthy"})
+	if err != nil || !p.Running() {
+		t.Fatalf("fast start: %v", err)
+	}
+	if d := time.Since(begin); d > 2*time.Second {
+		t.Fatalf("Get/Start of another id waited %v behind a slow health check", d)
+	}
+	if err := <-slow; !errors.Is(err, runner.ErrStartFailed) {
+		t.Fatalf("slow start err = %v", err)
+	}
+}
+
+func TestStopAllWaitsForInFlightStartAndRefusesNew(t *testing.T) {
+	r, logs := newRunner(t)
+	r.HealthTimeout = 2 * time.Second
+	started := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		close(started)
+		_, err := r.Start(context.Background(), "late", self(t), map[string]string{fakeEnv: "never-healthy"})
+		result <- err
+	}()
+	<-started
+	pid := pidFromLog(t, filepath.Join(logs, "late.log"), "never-healthy")
+	r.StopAll()
+	// StopAll returned: the in-flight start's process must already be gone.
+	if !gone(pid) {
+		waitUntil(t, "in-flight child reaped", func() bool { return gone(pid) })
+	}
+	select {
+	case err := <-result:
+		if !errors.Is(err, runner.ErrStartFailed) {
+			t.Fatalf("in-flight start err = %v", err)
+		}
+	default:
+		t.Fatal("StopAll returned before the in-flight Start finished")
+	}
+	if _, err := r.Start(context.Background(), "after", self(t), map[string]string{fakeEnv: "healthy"}); !errors.Is(err, runner.ErrClosed) {
+		t.Fatalf("Start after StopAll = %v, want ErrClosed", err)
 	}
 }
