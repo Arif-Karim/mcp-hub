@@ -79,6 +79,18 @@ func TestDefaultCatalogueLoads(t *testing.T) {
 	if got := ids(s.Search("", "")); !reflect.DeepEqual(got, want) {
 		t.Fatalf("entries = %v, want %v", got, want)
 	}
+	dw, err := s.Get("deepwiki")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dw.Name != "Engineering Docs Q&A (DeepWiki)" {
+		t.Errorf("deepwiki name = %q", dw.Name)
+	}
+	const desc = "Ask questions about repositories' documentation. In production this would be a company-hosted " +
+		"DeepWiki over internal repos; this demo points at the public instance (no credentials sent)."
+	if dw.Description != desc {
+		t.Errorf("deepwiki description = %q", dw.Description)
+	}
 }
 
 func TestLoad(t *testing.T) {
