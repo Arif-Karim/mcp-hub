@@ -19,10 +19,17 @@ entries:
         description: Return the runbook for a service.
     docsUrl: https://github.com/Arif-Karim/mcp-hub/tree/main/examples/mcp-server-template
     artifacts:
-      # Filled in by the release pipeline (url + sha256 per platform).
+      # From the service-directory-v0.1.0 release (checksums.txt), produced by
+      # .github/workflows/publish-mcp-server.yml.
       darwin-arm64:
         url: https://github.com/Arif-Karim/mcp-hub/releases/download/service-directory-v0.1.0/service-directory_darwin_arm64.tar.gz
-        sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+        sha256: "985917c5e8961d66a72e5ca431d1da8e06c5e88733396ad8a0cfdc17405bc730"
+      darwin-amd64:
+        url: https://github.com/Arif-Karim/mcp-hub/releases/download/service-directory-v0.1.0/service-directory_darwin_amd64.tar.gz
+        sha256: "4527ad58316bb6908ddcbae752454e225e767db1f0569a7004e134be7f9ebfb7"
+      linux-amd64:
+        url: https://github.com/Arif-Karim/mcp-hub/releases/download/service-directory-v0.1.0/service-directory_linux_amd64.tar.gz
+        sha256: "288664f54a86cf3d6872d91e2624f7ce23a4118e0271bd666e2298d03b2194d1"
 
   - id: deepwiki
     name: DeepWiki
