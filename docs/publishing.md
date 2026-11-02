@@ -7,14 +7,15 @@ There are two kinds of entry:
 
 | Kind | What the hub does | Use it when |
 |---|---|---|
-| **local** | Downloads your release, checks its sha256, runs it on the engineer's laptop behind the proxy, and injects a short-lived token naming the user | Your server calls internal APIs on the user's behalf |
+| **local** | Downloads your release, checks its sha256, runs it on the engineer's laptop behind the proxy, and injects a short-lived token (at most 15 minutes) naming the user | Your server calls internal APIs on the user's behalf |
 | **remote** | Points Claude Code at your hosted HTTPS endpoint through the proxy, with **no** hub token forwarded | You already run a hosted MCP service |
 
 > **Demo vs production.** In this repo, GitHub Releases stands in for the
 > bank's artifact registry (Artifactory). The catalogue is a YAML file built
 > into the binary or loaded from `MCP_HUB_CATALOGUE`, and GitHub PR review
-> stands in for the platform team's approval. Production is described at the
-> end.
+> stands in for the platform team's approval. Because the catalogue ships
+> inside the binary, a merged catalogue change reaches engineers only when the
+> next mcp-hub release is installed. Production is described at the end.
 
 ## 1. Build it (local servers)
 
@@ -41,28 +42,43 @@ prints a token. See the template README.
 ## 2. Release it
 
 A release is **one `.tar.gz` per platform, with an executable named
-`mcp-server` at the archive root**, plus `checksums.txt` (sha256).
-
-Platforms are `darwin-arm64`, `darwin-amd64` and `linux-amd64`.
+`mcp-server` at the archive root**, plus `checksums.txt` (sha256). The template
+builds `darwin-arm64`, `darwin-amd64` and `linux-amd64`; the catalogue also
+accepts `linux-arm64`. The hub picks the artifact that matches the engineer's
+machine.
 
 [`.github/workflows/publish-mcp-server.yml`](../.github/workflows/publish-mcp-server.yml)
-does this for the reference server. Push a tag `service-directory-v<semver>`,
-or run it manually from `main`. It works like this:
+does this for the reference server. Follow the template README's
+[Publish steps](../examples/mcp-server-template/README.md#publish):
 
-1. A **build** job with read-only permissions runs lint, race tests and
-   `govulncheck`, cross-compiles, and packages the archives.
-2. A **release** job is the only one with write access. It runs no repository
-   code; it only publishes the built files.
+1. Bump `Version` in `internal/directory/directory.go` and merge it. The build
+   fails if the version doesn't match the tag.
+2. Tag the merge commit on `main` (`service-directory-v<semver>`) and push the
+   tag. The build refuses commits that aren't on `main`. Alternatively, run the
+   workflow manually on `main` with a version that has no tag yet.
+3. A **build** job with read-only permissions lints, runs race tests and
+   `govulncheck`, then packages the archives. A **release** job is the only one
+   with write access. It runs no repository code; it only publishes the files.
+   The release notes include a ready-to-paste `artifacts:` snippet with the
+   sha256s.
 
-For your own server, copy the workflow and change the tag prefix and the
-working directory.
+To reuse the workflow for your own server, change these in your copy:
+
+- the tag prefix
+- the working directory
+- the `Version` file path in the guard step
+- the archive `name=` in `scripts/package.sh`
+- the concurrency group
+- the release title
 
 ## 3. Add a catalogue entry (pull request)
 
 Open a PR that adds your entry to `internal/catalogue/default.yaml`.
 
-Start with `approval: pending`. Engineers see it as **"coming soon"**, which
-lets other teams know it's on the way. They can't enable it yet.
+Start with `approval: pending`. Engineers see it as **"Pending security
+review"**, which lets other teams know it's on the way. They can't enable it
+yet. Paste the `artifacts:` snippet from your release notes rather than copying
+sha256s by hand.
 
 ```yaml
   - id: my-service              # ^[a-z0-9][a-z0-9-]{1,62}$, also the token audience
@@ -91,13 +107,22 @@ credentials. It has no `artifacts`, and `auth` must be `none`. The hub never
 forwards its token to a server it doesn't run.
 
 The catalogue is validated strictly, and an invalid catalogue stops the daemon
-with every problem listed. The rules:
+with every problem listed. The main rules are below; the full set is in
+[`internal/catalogue/validate.go`](../internal/catalogue/validate.go).
 
 - Unknown fields are errors.
-- `id` must be unique.
+- `id` must be unique and match `^[a-z0-9][a-z0-9-]{1,62}$`.
+- `name`, `description`, `owner` and `version` are required.
+- `version` must match `^[0-9A-Za-z][0-9A-Za-z.+-]*$`, because it becomes a
+  folder name.
+- `kind`, `classification`, `approval` and `auth` must be one of the values
+  shown above.
 - `docsUrl` and remote `url` must be https.
-- Artifact URLs must be https.
-- `sha256` must be 64 hex characters.
+- Artifact URLs must be https; plain http is allowed only for `127.0.0.1` or
+  `localhost` test registries.
+- Platform keys must match `^(darwin|linux)-(arm64|amd64)$`.
+- `sha256` must be 64 **lowercase** hex characters.
+- Local entries must not set `url`.
 - An approved local entry must list at least one artifact.
 
 CI (`scripts/verify.sh`) runs the catalogue tests on your PR.
@@ -106,9 +131,14 @@ CI (`scripts/verify.sh`) runs the catalogue tests on your PR.
 
 | State | Engineers see | Who sets it |
 |---|---|---|
-| `pending` | "Coming soon"; enable is refused (`not_approved`) | Your team, in the PR |
+| `pending` | "Pending security review"; enable is refused (`not_approved`) | Your team, in the PR |
 | `approved` | Can enable it | Platform team, after review |
-| `revoked` | Hidden from enable; already-enabled copies are disabled when the daemon restarts | Platform team (incident, end of life) |
+| `revoked` | Listed as revoked; enable is refused (`not_approved`); already-enabled copies are disabled when the daemon restarts | Platform team (incident, end of life) |
+
+In this demo the role split is a convention enforced by PR review: nothing
+stops a team from writing `approved` in its own PR except the reviewer. In
+production, CODEOWNERS on the catalogue would require platform engineering's
+approval.
 
 The platform team's review is a human check on these points:
 
@@ -119,20 +149,32 @@ The platform team's review is a human check on these points:
 - the checksums match the release.
 
 **New version:** publish a new release, then open a PR that bumps `version`
-and replaces the artifact URLs and sha256s. Engineers get the new version the next time it
-is enabled or the daemon restarts. Each version installs into its own folder,
+and replaces the artifact URLs and sha256s. Once a new mcp-hub release containing the
+change is installed, the daemon installs the new version when it restarts. Each version installs into its own folder,
 `~/.mcp-hub/servers/<id>/<version>/`.
 
-## 5. Try it before the PR merges
+## 5. Try it locally before the PR merges
+
+`scripts/dev-registry.sh` demonstrates the local-server flow end to end with
+the **reference** server. It builds `service-directory`, serves it on
+127.0.0.1:7421 and writes a fixed catalogue to `dist/dev/catalogue.yaml`:
 
 ```sh
-scripts/dev-registry.sh                        # builds the template, serves it on 127.0.0.1:7421,
-                                               # writes dist/dev/catalogue.yaml with the real sha256
+scripts/dev-registry.sh
 MCP_HUB_CATALOGUE=dist/dev/catalogue.yaml ./bin/mcp-hub serve
 ```
 
-Then enable it in the UI at http://127.0.0.1:7420, or ask Claude Code. Run
-`/reload-plugins` in Claude Code, or restart it, to load the new server.
+To try **your own** server:
+
+1. Build your archive.
+2. Serve it on loopback (artifact URLs may use plain http only for
+   `127.0.0.1` or `localhost`).
+3. Write a catalogue file containing your entry.
+4. Point `MCP_HUB_CATALOGUE` at it. It **replaces** the built-in catalogue;
+   it doesn't merge with it.
+
+Then enable the server in the UI at http://127.0.0.1:7420, or ask Claude Code.
+Run `/reload-plugins` in Claude Code, or restart it, to load the new server.
 
 ## In production (not built here)
 
