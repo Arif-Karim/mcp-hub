@@ -15,7 +15,8 @@ All data here is synthetic (fictional services, `example.test` identities).
 | Every `/mcp` request carries a **hub JWT**; verify it | The hub is the policy point; the server trusts nothing else | `internal/hubauth` |
 | `GET /healthz` → `200 {"status":"ok"}`, no auth | Hub readiness probe after start | `internal/app` |
 | Config from env, **fail fast** with the variable name | Hub owns the process contract | `internal/config` |
-| Exit cleanly on `SIGTERM` | Hub stops servers on disable/shutdown | `cmd/mcp-server` |
+| Exit cleanly and promptly on `SIGTERM`, even with open SSE streams (cancel request contexts on shutdown) | Hub stops servers on disable/shutdown | `cmd/mcp-server` |
+| Close idle MCP sessions (30m) | Clients that die without `DELETE` must not leak sessions | `internal/app` |
 | Log `sub` + tool name; **never** tokens, args or results | Tool I/O may contain sensitive data | `internal/directory` |
 | Tool failures are **tool errors** (`isError: true`), not protocol errors | The model can see and recover from them | `internal/directory` |
 | Release = one archive per platform, `mcp-server` at the root | Hub unpacks and execs a fixed name | `scripts/` |
@@ -28,7 +29,11 @@ The hub injects `Authorization: Bearer <JWT>` on every proxied request. Reject w
 - `alg` is `EdDSA` (Ed25519). `none`, `HS*`, `RS*` are rejected.
 - `kid` resolves in the JWKS at `HUB_JWKS_URL`
   (`{"keys":[{"kty":"OKP","crv":"Ed25519","x":"<base64url>","kid":"…","alg":"EdDSA","use":"sig"}]}`).
-  Keys are cached; an unknown `kid` triggers at most one refetch per 30s.
+  Keys are cached for 10 minutes, then refetched and replaced (retired keys stop working).
+  An unknown `kid` triggers at most one refetch per 30s (5s after a failed fetch). The
+  fetch runs outside the lock and is shared by concurrent requests. If the hub is
+  unreachable, cached keys keep working. Plain `http` is only allowed to loopback, and
+  redirects to another host are refused.
 - `iss` == `HUB_ISSUER`, `aud` == `HUB_AUDIENCE` (your catalogue id).
 - `exp` is present; `exp`/`nbf` checked with 30s leeway. `sub` is present.
 
@@ -79,12 +84,15 @@ Tests: `go test -race ./...` (auth cases, tools through a real SDK client, confi
 ## Publish
 
 1. Bump `Version` in `internal/directory/directory.go`.
-2. Tag and push: `git tag service-directory-v0.2.0 && git push origin service-directory-v0.2.0`
-   (or run the `publish-mcp-server` workflow manually with a version).
-3. `.github/workflows/publish-mcp-server.yml` lints, runs `go test -race` and
-   `govulncheck`, runs `scripts/package.sh`, and creates a GitHub Release with the
-   archives and `checksums.txt`. In the bank this step pushes to Artifactory and
-   opens the catalogue PR.
+2. After the bump is merged, tag the merge commit on `main` and push:
+   `git tag service-directory-v0.2.0 && git push origin service-directory-v0.2.0`
+   (or run the `publish-mcp-server` workflow manually on `main` with a version that has no tag yet).
+3. `.github/workflows/publish-mcp-server.yml` has two jobs. `build` (read-only token, no
+   persisted credentials) checks the version and that the commit is on `main`, lints, runs
+   `go test -race` and `govulncheck`, and packages. `release` (write token, runs no repo
+   code) creates the GitHub Release from the uploaded archives and `checksums.txt`. In the
+   bank this job pushes to Artifactory and opens the catalogue PR. Actions are pinned to
+   commit SHAs.
 
 To build locally: `scripts/package.sh 0.1.0` → `dist/` (gitignored):
 
@@ -95,8 +103,9 @@ dist/service-directory_linux_amd64.tar.gz
 dist/checksums.txt
 ```
 
-Builds are reproducible (CGO off, `-trimpath`, empty build id, fixed archive
-metadata via `scripts/mktar`), so anyone can rebuild a tag and match the sha256s.
+Builds are reproducible (toolchain pinned in `go.mod`, CGO off, `-trimpath`, empty
+build id, fixed archive metadata via `scripts/mktar`), so anyone can rebuild a tag and
+match the sha256s. Release URLs use `$GITHUB_REPOSITORY`; set it when packaging a copy locally.
 
 ## Catalogue entry to submit
 
