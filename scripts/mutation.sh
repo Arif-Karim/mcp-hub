@@ -16,14 +16,9 @@ if [[ -z "$pkgs" ]]; then
   echo "no changed Go packages vs ${BASE_REF}; skipping"
   exit 0
 fi
-# gremlins signals the process group when it kills a timed-out mutant; on CI
-# that group includes the job's shell (exit 143). Give it its own session.
-isolate=""
-if command -v setsid >/dev/null; then isolate="setsid --wait"; fi
-
 for p in $pkgs; do
   echo "--- mutation: $p (efficacy >= ${MUTATION_EFFICACY_MIN}%)"
-  out=$($isolate go tool -modfile=tools/go.mod gremlins unleash --workers "${MUTATION_WORKERS:-2}" \
+  out=$(go tool -modfile=tools/go.mod gremlins unleash --workers "${MUTATION_WORKERS:-2}" \
     --timeout-coefficient "$TIMEOUT_COEFFICIENT" \
     --threshold-efficacy "$MUTATION_EFFICACY_MIN" "./$p" 2>&1) || { echo "$out"; exit 1; }
   echo "$out" | tail -4
