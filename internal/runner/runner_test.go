@@ -122,8 +122,9 @@ func TestStartHealthy(t *testing.T) {
 	if code, _ := get(t, p.URL()+"/healthz"); code != http.StatusOK {
 		t.Fatalf("healthz = %d", code)
 	}
-	if _, wd := get(t, p.URL()+"/cwd"); wd != filepath.Dir(self(t)) {
-		t.Fatalf("cwd = %q, want %q", wd, filepath.Dir(self(t)))
+	wantWD, _ := filepath.EvalSymlinks(filepath.Dir(self(t))) // macOS: /var -> /private/var
+	if _, wd := get(t, p.URL()+"/cwd"); wd != wantWD {
+		t.Fatalf("cwd = %q, want %q", wd, wantWD)
 	}
 	if got, ok := r.Get("svc"); !ok || got != p {
 		t.Fatalf("Get = %v, %v", got, ok)
