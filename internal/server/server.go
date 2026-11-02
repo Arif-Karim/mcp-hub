@@ -25,6 +25,10 @@ type Options struct {
 	JWKS http.Handler
 	// Audit backs GET /api/v1/audit (lane C). Nil disables it.
 	Audit *audit.Log
+	// Servers backs POST /api/v1/servers/{id}/enable|disable (needs Catalogue). Nil disables them.
+	Servers Enabler
+	// Status backs GET /api/v1/status. Nil disables it.
+	Status func() Status
 }
 
 // New returns the root handler.
@@ -39,6 +43,12 @@ func New(opts Options) http.Handler {
 	mux.HandleFunc("/api/v1/health", methodNotAllowed)
 	if opts.Catalogue != nil {
 		registerCatalogue(mux, opts.Catalogue, opts.State)
+		if opts.Servers != nil {
+			registerServers(mux, opts.Catalogue, opts.Servers)
+		}
+	}
+	if opts.Status != nil {
+		registerStatus(mux, opts.Status)
 	}
 	registerLaneC(mux, opts)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {

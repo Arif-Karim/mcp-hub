@@ -11,12 +11,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/user"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
+	"github.com/Arif-Karim/mcp-hub/internal/claudeconfig"
 	"github.com/Arif-Karim/mcp-hub/internal/cli"
-	"github.com/Arif-Karim/mcp-hub/internal/server"
+	"github.com/Arif-Karim/mcp-hub/internal/daemon"
 	"github.com/Arif-Karim/mcp-hub/internal/version"
 	"github.com/Arif-Karim/mcp-hub/internal/webui"
 )
@@ -68,13 +71,34 @@ func serve(args []string) error {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
 
+	paths, err := claudeconfig.DefaultPaths()
+	if err != nil {
+		return err
+	}
+	source := os.Getenv("MCP_HUB_CATALOGUE")
+	if source == "" {
+		source = "embedded"
+	}
+	d, err := daemon.New(daemon.Config{
+		Home:             filepath.Dir(paths.Ledger),
+		ClaudeConfigPath: paths.ClaudeConfig,
+		Addr:             *addr,
+		Version:          version.Version,
+		Catalogue:        cat,
+		CatalogueSource:  source,
+		User:             currentUser(),
+		UI:               webui.Handler(),
+		Logger:           logger,
+	})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	d.Restore(context.Background())
+
 	srv := &http.Server{
-		Addr: *addr,
-		Handler: server.New(server.Options{
-			Version:   version.Version,
-			UI:        webui.Handler(),
-			Catalogue: cat,
-		}),
+		Addr:              *addr,
+		Handler:           d.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -83,7 +107,8 @@ func serve(args []string) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("mcp-hub listening", "addr", *addr, "version", version.Version)
+		slog.Info("mcp-hub listening", "addr", *addr, "version", version.Version, "home", filepath.Dir(paths.Ledger),
+			"claudeConfig", paths.ClaudeConfig, "catalogue", source, "enabled", d.Hub.EnabledCount())
 		errCh <- srv.ListenAndServe()
 	}()
 
@@ -124,6 +149,15 @@ func loadCatalogue() (*catalogue.Store, error) {
 		return nil, fmt.Errorf("catalogue %s:\n%w", path, err)
 	}
 	return s, nil
+}
+
+// currentUser is the subject placed in issued tokens. In production the
+// enterprise IdP's identity replaces it.
+func currentUser() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	return envOr("USER", "developer")
 }
 
 func envOr(key, def string) string {
