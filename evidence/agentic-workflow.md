@@ -42,7 +42,8 @@ builder (worktree) ── red → green commits ── verify.sh ── push onc
 | #13 | CodeQL log-injection fixes | yes |
 | #14 | F2 CLI, skill, installer, release | yes |
 | #16 | CI builds the shippable binary | yes |
-| #15 | F1 hub service, runner, daemon, e2e | open at time of writing |
+| #17 | Catalogue: real service-directory v0.1.0 checksums | yes |
+| #15 | F1 hub service, runner, daemon, e2e | open at time of writing (review fixes done) |
 
 ## Representative steering prompts (excerpts)
 
@@ -62,6 +63,7 @@ builder (worktree) ── red → green commits ── verify.sh ── push onc
 | Asked for a vulnerability-scanning layer | PR #5: CodeQL (PR, main, weekly), Dependabot, `npm audit` alongside govulncheck and gosec |
 | Corrected the token model | the hub JWT carries user identity (`sub`) so servers can call their own APIs on the user's behalf; see design.md |
 | Found Claude bypassing the hub with `claude mcp add` | skill wording, plus decisions.md ADR 3 (managed settings) |
+| Tested the slice by hand in Claude Code via the skill | enabled remote DeepWiki and local service-directory, called tools; the server verified the hub token and the audit log showed `find_service` |
 
 ## Notable reviewer catches
 
@@ -72,7 +74,7 @@ builder (worktree) ── red → green commits ── verify.sh ── push onc
 | #4 (D) | A failed concurrent-change retry left the ledger claiming a user-created `hub__x`, so a later Remove would **delete the user's entry** | single deferred ledger restore + regression test; added flock, `PrevHash` |
 | #6 (E) | **SIGTERM hung 10s** and exited 1 with an open `GET /mcp` SSE stream (Claude Code's default). The builder's smoke test never held a stream open | base context cancelled on shutdown + a test that holds SSE open |
 | #14 (F2) | `allowed-tools: Bash(mcp-hub:*)` **pre-approved `enable`**, so only model obedience stood between a prompt and a config change | pre-approve only `search`, `info`, `status` |
-| #15 (F1) | Runner "never-healthy" fake deadlock-panicked at once, so the **timeout path was never exercised**; SIGKILL skipped surviving group members | must-fix on PR #15 |
+| #15 (F1) | Runner "never-healthy" fake deadlock-panicked at once, so the **timeout path was never exercised**; SIGKILL skipped surviving group members, orphaning a child that ignores SIGTERM | fake now stays alive and tests assert its pid is gone; reaper SIGKILLs the whole group when the leader exits (tested with a SIGTERM-ignoring grandchild). The red run itself left such orphans on the dev machine |
 
 Lesson repeated across lanes: builders tested the request path they had in mind; reviewers tested the real client's
 connection pattern, concurrency, and what a hostile counterpart could send back.

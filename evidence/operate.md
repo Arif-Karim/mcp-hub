@@ -27,9 +27,9 @@ How a developer (and the platform team supporting them) runs, debugs, rolls back
 
 ## After enabling or disabling
 
-Claude Code reads MCP servers when it loads, so a newly enabled server's tools appear only after **`/reload-plugins`
-(or restarting Claude Code)**. Check with `/mcp`: enabled servers are listed as `hub__<id>`. The same applies after a
-disable. A single gateway entry would remove this step (decisions.md ADR 4).
+Claude Code reads MCP servers when it loads, so a newly enabled server's tools appear only after you **restart Claude
+Code** (`/reload-plugins` may also work; not yet confirmed). The same applies after a disable. A single gateway entry
+would remove this step (decisions.md ADR 4).
 
 ## Config and secrets
 
@@ -54,9 +54,9 @@ disable. A single gateway entry would remove this step (decisions.md ADR 4).
 | `enable` → `config_conflict` | the user already has their own `hub__<id>` entry, or edited ours | mcp-hub will not overwrite it. Remove or rename the entry, then retry |
 | `enable` → `config_invalid` | `~/.claude.json` is not valid JSON | mcp-hub does not write to it. Fix the file, or restore from `~/.mcp-hub/backups/` |
 | `enable` → `registry_unavailable` / `start_failed` | network or registry outage, or the server crashed on start | retry. The `state.lastError` field (`mcp-hub info <id>`) has details |
-| Enabled, but Claude Code doesn't show the tools | Claude Code has not reloaded its MCP config | `/reload-plugins` or restart Claude Code; `/mcp` should list `hub__<id>` |
+| Enabled, but Claude Code doesn't show the tools | Claude Code has not reloaded its MCP config | restart Claude Code (or try `/reload-plugins`) |
 | `enable` → `start_failed` for a local server | the server crashed or never answered `/healthz` | read `~/.mcp-hub/logs/<id>.log` |
-| Tool calls fail after a revoke | the catalogue revoked the entry; the daemon auto-disables it on its next start | `mcp-hub disable <id>` now, then `/reload-plugins` |
+| Tool calls fail after a revoke | the updated catalogue (new release or `MCP_HUB_CATALOGUE` file) revoked the entry; the daemon auto-disables it on its next start | `mcp-hub disable <id>` now, then restart Claude Code |
 | Uninstall prints `Kept hub__x` | the user edited that entry | kept on purpose; remove it by hand if you no longer want it |
 
 ## Rollback

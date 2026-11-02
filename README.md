@@ -2,7 +2,8 @@
 
 A governed MCP marketplace for Claude Code. Developers find an approved MCP server in a catalogue (web UI, CLI, or by
 asking Claude) and enable it in one step. mcp-hub verifies the artifact's checksum, runs it locally or proxies a remote
-one, injects a short-lived identity token on every call and writes an audit log. No secrets ever land in Claude Code config.
+one, injects a short-lived identity token on calls to internal servers (never to third-party remotes) and writes an
+audit log. No secrets ever land in Claude Code config.
 
 Built in a 3-hour timebox for a take-home. The evidence pack is in [`evidence/`](evidence/):
 [intent](evidence/intent.md) · [design](evidence/design.md) · [decisions](evidence/decisions.md) ·
@@ -12,7 +13,7 @@ Built in a 3-hour timebox for a take-home. The evidence pack is in [`evidence/`]
 
 | Who | Needs |
 |---|---|
-| Assessors / developers | macOS (arm64 or amd64), Claude Code. No Go or Node needed for the release install |
+| Assessors / developers | macOS (arm64 or amd64), Claude Code. No Go or Node needed for the release install (until v0.1.0 is published, the from-checkout install needs Go 1.27 + Node 24) |
 | Contributors | Go 1.27, Node 24 (for the UI), `python3` (only for `scripts/dev-registry.sh`) |
 
 ## Quick start (macOS)
@@ -21,8 +22,8 @@ Built in a 3-hour timebox for a take-home. The evidence pack is in [`evidence/`]
 curl -fsSL https://raw.githubusercontent.com/Arif-Karim/mcp-hub/main/install.sh | bash
 ```
 
-> This downloads the latest `v*` GitHub release, so it works once **v0.1.0** is released. Until then, install from a
-> checkout:
+> This downloads the latest `v*` GitHub release, so it needs the **v0.1.0** release (being cut today). Until then,
+> install from a checkout (needs Go 1.27 + Node 24):
 >
 > ```sh
 > VERSION=v0.0.0-dev scripts/package-release.sh   # writes dist/mcp-hub_<os>_<arch>.tar.gz and checksums.txt
@@ -84,27 +85,29 @@ CI runs the same script on every PR, plus mutation testing and CodeQL. See [`evi
    permission prompt for `mcp-hub enable service-directory`, because the skill pre-approves only read-only commands.
 3. mcp-hub downloads and checksums the server, starts it, and adds `hub__service-directory` →
    `http://127.0.0.1:7420/mcp/service-directory` to `~/.claude.json`.
-4. Run **`/reload-plugins`** (or restart Claude Code) so it loads the new server. `/mcp` lists `hub__service-directory`.
+4. **Restart Claude Code** so it loads the new server (`/reload-plugins` may also work; not yet confirmed).
 5. Ask *"which services are tagged payments?"*. Claude calls `find_service` through the proxy, which injects a JWT
    (`sub` = you, `aud` = `service-directory`); the server verifies it.
-6. The UI's **Activity** tab (and `~/.mcp-hub/audit.jsonl`) shows the call. Arguments and results are never recorded:
+6. The UI's **Activity** tab (and `~/.mcp-hub/audit.jsonl`) shows the call. Arguments and results are never recorded.
+   Illustrative line (shape from `internal/audit`; values synthetic):
 
    ```json
-   {"time":"2026-11-02T01:30:12.345Z","server":"service-directory","method":"tools/call","tool":"find_service","status":200,"durationMs":14,"user":"dev"}
+   {"time":"2026-11-02T01:30:12.345Z","server":"service-directory","method":"tools/call","tool":"find_service","status":200,"durationMs":14,"user":"alice"}
    ```
 
-Asking for *Payments Sandbox* gets an explanation that it was revoked; `mcp-hub enable payments-sandbox` returns
-`not_approved` (exit 2).
+For *Payments Sandbox*, the skill tells Claude to explain that it was revoked and not to try enabling it;
+`mcp-hub enable payments-sandbox` returns `not_approved` (exit 2) regardless.
 
 ## Known limitations
 
 - The `curl | bash` install needs a published `v*` release; macOS only (no Windows/Linux installer).
-- Claude Code must `/reload-plugins` or restart after enable/disable (a gateway entry would fix this; ADR 4).
+- Claude Code must be restarted after enable/disable (`/reload-plugins` may also work; a gateway entry would remove this step; ADR 4).
 - Nothing **enforces** use of the hub: a developer can still `claude mcp add` by hand. Production would use managed
   Claude Code settings (ADR 3).
 - The token issuer is local, standing in for the bank's IdP; artifacts are checksummed but not signed.
 - Local servers run as the user's processes (no container sandbox); a crashed server is not auto-restarted.
-- The catalogue is embedded or a local file, not a central service; revocation reaches a laptop on its next daemon start.
+- The catalogue is embedded or a local file, not a central service: a revoke takes effect once the laptop has the
+  updated catalogue (new release or `MCP_HUB_CATALOGUE` file) and the daemon restarts. Fleet-wide push is not built.
 - Enable/disable, the runner and the e2e test are in PR #15 at the time of writing.
 
 More in [`evidence/verify.md`](evidence/verify.md#known-gaps) and [`evidence/design.md`](evidence/design.md).

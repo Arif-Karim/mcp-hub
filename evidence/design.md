@@ -48,8 +48,6 @@ every call goes through one place that adds credentials and writes the audit log
 | `web/` | Vue 3 UI (catalogue, detail drawer, Activity tab), embedded in the binary | talks to `/api/v1` only |
 | `examples/mcp-server-template` | reference `service-directory` server + publish workflow | separate Go module |
 
-The enable/disable/runner/daemon/e2e pieces land in PR #15.
-
 ## Enable flow
 
 ```
@@ -70,9 +68,16 @@ Claude Code → /mcp/<id> → proxy: resolve → strip client creds → inject J
 
 - **Disable** removes the config entry first. If that conflicts (the user edited `hub__<id>`), the server keeps
   running so Claude Code is never left pointing at a dead route. Then SIGTERM to the process group, SIGKILL after 5s.
-- **Restore on daemon start.** For every ledger-owned id: revoked, delisted or no-longer-approved entries are
-  auto-disabled (`lastError: "disabled: revoked by platform team"`); approved local servers restart from the cache.
-  Revocation in the catalogue reaches every laptop on its next daemon start, without relying on the developer.
+- **Restore on daemon start.** Runs in the background once the listener is serving, each server time-boxed to 2
+  minutes. For every ledger-owned id: revoked, delisted or no-longer-approved entries are auto-disabled
+  (`lastError: "disabled: revoked by platform team"`); approved local servers restart from the cache. Revocation takes
+  effect when the catalogue the daemon loads changes (a new release, or a new `MCP_HUB_CATALOGUE` file) **and** the
+  daemon restarts. Pushing revocations to every laptop needs the central catalogue service (production table below;
+  not built).
+- **Shutdown.** SIGINT/SIGTERM → HTTP shutdown → hub `Close` (new enables refused, in-flight enables and restores
+  drained, bounded 15s) → runner `StopAll` (aborts starts still waiting for health, then stops every server) → audit log.
+- **Process groups.** Whenever a server's leader process exits (stop, crash or failed start), the whole process group
+  is SIGKILLed, so a child that ignores SIGTERM is not orphaned.
 - **State.** `running` / `stopped` / `error` (with reason) for local, `ready` for remote, `disabled` otherwise. Only
   enabled and running/ready entries resolve in the proxy. A failed re-enable leaves a healthy server serving.
 
@@ -132,6 +137,16 @@ service?"). The example server verifies the token against `HUB_JWKS_URL` and bin
 - **Known gap.** There is no lock shared with Claude Code itself. A write landing between our re-check and rename can
   still be lost; the window is microseconds and backups cover it.
 
+## Known gaps (runtime)
+
+- The free port is picked then released before the server binds; another process could win the race (the health
+  check then fails cleanly).
+- A crashed local server is not restarted automatically; the UI shows `error` and Enable restarts it.
+- A second daemon on the same `MCP_HUB_HOME` is refused only if it uses the same port. On a different port it would
+  start duplicate server processes (config writes are flock-safe; processes are not).
+- Group SIGKILL after the leader is reaped uses the leader's pid as the group id; pid reuse in that instant could hit
+  the wrong group (unlikely).
+
 ## Tech choices
 
 - **Go**, standard library first; deps limited to `yaml.v3`, `golang-jwt/jwt/v5` and the official MCP Go SDK (example
@@ -144,7 +159,7 @@ service?"). The example server verifies the token against `HUB_JWKS_URL` and bin
 
 | Here (take-home) | In the bank |
 |---|---|
-| Catalogue YAML embedded in the binary or `MCP_HUB_CATALOGUE` | Central catalogue service; entries change by **PR** reviewed by platform/security, then published. Daemons poll it, so revocation is fleet-wide |
+| Catalogue YAML embedded in the binary or `MCP_HUB_CATALOGUE`; a revoke ships in a release | Central catalogue service (**not built**); entries change by **PR** reviewed by platform/security, then published. Daemons poll it, so revocation is fleet-wide without a restart |
 | GitHub Releases + sha256 | **Artifactory** (internal mirror, retention, scanning); signed artifacts and notarised binaries |
 | Local Ed25519 issuer | Bank **IdP**: token exchange per server audience; keys in HSM/KMS with rotation (JWKS already supports `kid`) |
 | Skill + catalogue guide Claude | **Managed Claude Code settings** allow only MCP servers whose URL is the hub proxy (see decisions.md) |

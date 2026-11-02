@@ -24,7 +24,7 @@
 
 ## Latest results
 
-Taken from the PR descriptions (single-worker gremlins, timeout coefficient 20).
+Taken from the PR descriptions (gremlins, timeout coefficient 20, mostly single-worker runs).
 
 | Package | Mutation efficacy | Source |
 |---|---|---|
@@ -35,10 +35,11 @@ Taken from the PR descriptions (single-worker gremlins, timeout coefficient 20).
 | `internal/audit` | 95.7% (22/23) | PR #3 |
 | `internal/claudeconfig` | 91.6% (87 killed / 8 lived: unobservable fsync/close error branches) | PR #4 |
 | `internal/cli` | 94.0% (63 killed / 4 lived) | PR #14 |
-| `internal/hub`, `internal/daemon`, `internal/server`, `cmd/mcp-hub` | 100% (35, 9, 25, 18 killed) | PR #15 |
-| `internal/runner` | 80.8% (21 killed / 5 lived / 2 timed out: timing boundaries) | PR #15 (before review fixes) |
+| `internal/hub`, `internal/server`, `cmd/mcp-hub` | 100% (39, 25, 18 killed) | PR #15 |
+| `internal/daemon` | 90% (9 killed / 1 lived: a drain-timeout warning log) | PR #15 |
+| `internal/runner` | 86.2% (25 killed / 4 lived / 3 timed out; survivors are timing boundaries) | PR #15 (after review fixes; was 80.8%) |
 
-Total Go coverage over `internal/...`: **92.8%** (PR #15; 91.3% on main after PR #14). UI: 56 Vitest tests (PR #2).
+Total Go coverage over `internal/...`: **92.8%** (PR #15; 91.3% on main after PR #14). UI: 71 Vitest tests in 9 files (`npm test`).
 
 ## End-to-end test
 
@@ -53,9 +54,13 @@ Total Go coverage over `internal/...`: **92.8%** (PR #15; 91.3% on main after PR
 6. Enabling the revoked entry → 403 `not_approved`.
 7. Disable → config entry removed, process gone, proxy returns 404.
 
-Not covered by the e2e: the UI click path and Claude Code itself (checked by hand, see agentic-workflow.md).
+Not covered by any automated test: the UI click path and Claude Code itself. The human tested enable and use end to
+end via the skill in Claude Code (remote DeepWiki and local service-directory; the server verified the token and the
+audit log showed `find_service`); see agentic-workflow.md.
 
 ## Guarded failures
+
+Tests in `internal/hub`, `internal/runner`, `internal/daemon`, `e2e/` and `cmd/mcp-hub/serve_test.go` land with PR #15.
 
 | Failure | Behaviour | Proving test(s) |
 |---|---|---|
@@ -84,8 +89,8 @@ Not covered by the e2e: the UI click path and Claude Code itself (checked by han
 
 - Installer checksum failure is checked by hand, not in CI.
 - No automated test drives the UI against a real daemon or Claude Code itself.
-- Runner (PR #15): the reviewer found the health-timeout path untested and a group-member SIGKILL gap; fixes are
-  tracked on that PR. A crashed local server is not auto-restarted.
+- A crashed local server is not auto-restarted.
 - No lock shared with Claude Code for `~/.claude.json` (microsecond window, backups mitigate).
-- A second daemon on the same `MCP_HUB_HOME` is refused by the port bind, not by a file lock.
+- A second daemon on the same `MCP_HUB_HOME` is refused only if it uses the same port. On a different port it would
+  start duplicate server processes (no home-dir lock).
 - Mutation numbers are per-PR snapshots; later changes are re-gated only for the packages they touch.

@@ -44,8 +44,8 @@ permission prompt (a PR #14 review catch).
 
 ## 4. Per-server `hub__` entries now, a single gateway later
 
-**Context.** Claude Code reads MCP servers from config at load time, so after enabling a server the user must run
-`/reload-plugins` (or restart) before its tools appear.
+**Context.** Claude Code reads MCP servers from config at load time, so after enabling a server the user must restart
+Claude Code (`/reload-plugins` may also work; not yet confirmed) before its tools appear.
 
 **Decision.** One `hub__<id>` entry per enabled server, each pointing at `/mcp/<id>`. Simple, maps one-to-one to audit
 and token audience, and disable is a config delete.
