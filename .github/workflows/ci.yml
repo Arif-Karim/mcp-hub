@@ -52,3 +52,43 @@ jobs:
         env:
           BASE_REF: origin/${{ github.base_ref }}
         run: scripts/mutation.sh
+
+  # End-to-end install on a real Mac: package -> install.sh -> health -> uninstall.
+  # Push to main only, to keep macOS minutes low.
+  installer:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: package
+        env:
+          VERSION: v0.0.0-ci
+        run: scripts/package-release.sh darwin/arm64
+      - name: install, check, uninstall
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/home"
+          mkdir -p "$HOME"
+          ./install.sh --local-artifact dist --no-launchd --no-open --skip-claude
+          test -x "$HOME/.local/bin/mcp-hub"
+          test -f "$HOME/.claude/skills/mcp-hub/SKILL.md"
+          curl -fsS http://127.0.0.1:7420/api/v1/health | grep -q '"status":"ok"'
+          "$HOME/.local/bin/mcp-hub" search --json | grep -q '"items"'
+          ./install.sh --uninstall
+          test ! -e "$HOME/.local/bin/mcp-hub"
+          test ! -e "$HOME/.claude/skills/mcp-hub"
+          if curl -fsS --max-time 2 http://127.0.0.1:7420/api/v1/health; then echo 'daemon still running after uninstall'; exit 1; fi

@@ -114,3 +114,21 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   refused), idle MCP sessions reaped after 30m, and the publish workflow split into read-only build and
   write-only release jobs with SHA-pinned actions. Lesson: smoke-test with the real client's connection
   pattern, not just one request/response.
+
+### Lane F2 (CLI, Claude Code skill, install.sh, release workflow)
+- Builder subagent, single worktree, branch `lane-f2-cli-skill-installer`. The red commit specified the CLI against an
+  `httptest` fake daemon: table and detail text, raw `--json` passthrough, contract `message (code)` errors, exit codes
+  (2 for `not_approved`/validation, 3 when the daemon is unreachable) and offline `uninstall-config` against a real
+  `claudeconfig.Writer` in `t.TempDir()`. `cli.Run` returns an exit code and writes to injected writers, so no `os.Exit` runs under test.
+- During the build the human changed the priority: "simplest complete slice first". The order became CLI + skill, then a minimal
+  `install.sh --local-artifact --no-launchd`, then a **draft PR** with try-it steps. Polish (launchd, release workflow,
+  macOS CI job, docs) went onto the same PR afterwards.
+- The argument parser is a single `range` pass with no index arithmetic. A previous lane's mutant turned an
+  index increment into an unbounded loop and OOM-killed CI, so this design means no mutant can make it loop forever.
+- Running the installer in a throwaway `HOME` on a spare port found a real bug that no test covered. launchd accepted
+  the LaunchAgent but deferred the spawn (`pended nondemand spawn = speculative`, caused by `ProcessType Background`),
+  so the health wait timed out. Fixed by dropping `ProcessType` and running `launchctl kickstart`. Re-verified install, re-install,
+  and `--uninstall --purge` through launchd.
+- A tampered `checksums.txt` was checked by hand: the installer aborts at the verify step and `~/.local/bin` is never created.
+- `uninstall-config` exits 0 when it keeps user-edited `hub__*` entries (`PartialRemoveError`). Leaving them in place is the
+  safe outcome, and failing would block `install.sh --uninstall` from removing everything else.
