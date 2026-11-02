@@ -82,3 +82,9 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   mutant that yields identical retry behaviour — accepted as equivalent rather than adding fault-injection seams.
 - Tests use `t.TempDir()` for config, ledger and backups and set `HOME` to a temp dir for `DefaultPaths`; the real
   `~/.claude.json` is never read or written.
+- Review round (PR #4, one batched review): must-fix was a real data-loss path — a failed concurrent-change retry left
+  the ledger claiming a user-created `hub__x`, so a later Remove would delete it. Reproduced as a red regression test,
+  fixed with a single deferred ledger restore. The same round added a cross-process `flock`, `PrevHash` for crash-safe
+  URL changes, a typed `PartialRemoveError`, and `O_EXCL` + fsync backups.
+- The new frozen-clock backup test caught a second bug in the first fix attempt: after pruning, the unsuffixed name was
+  reused and sorted *first*, so the newest backup got pruned next. Fixed by always naming a backup to sort after the newest.
