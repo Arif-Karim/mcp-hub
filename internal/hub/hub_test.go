@@ -699,8 +699,8 @@ func TestCloseWaitsForInFlightEnableThenRefuses(t *testing.T) {
 	closed := make(chan error, 1)
 	go func() { closed <- s.Close(context.Background()) }()
 	select {
-	case <-closed:
-		t.Fatal("Close returned while an Enable was still in flight")
+	case err := <-closed:
+		t.Fatalf("Close returned (%v) while an Enable was still in flight", err)
 	case <-time.After(100 * time.Millisecond):
 	}
 	close(e.run.block)

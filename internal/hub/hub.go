@@ -275,7 +275,9 @@ func (s *Service) restore(ctx context.Context, id string, enabledAt time.Time) e
 	}
 	if err := s.enable(ctx, e, enabledAt); err != nil {
 		s.cfg.Logger.Error("restore failed", "server", id, "err", err)
-		s.update(id, func(r *record) { r.enabled, r.enabledAt, r.lastError, r.restoring = true, enabledAt, err.Error(), false })
+		s.update(id, func(r *record) {
+			r.enabled, r.enabledAt, r.lastError, r.restoring = true, enabledAt, err.Error(), false
+		})
 		return fmt.Errorf("restore %s: %w", id, err)
 	}
 	s.cfg.Logger.Info("server restored", "server", id)
