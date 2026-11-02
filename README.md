@@ -50,7 +50,8 @@ the `hub__*` entries mcp-hub created (entries you edited are kept and listed). `
 make build && ./bin/mcp-hub serve         # UI + API + proxy on http://127.0.0.1:7420
 ```
 
-The default catalogue includes two public remote servers (DeepWiki, Context7) that work straight away. To try the
+The default catalogue includes two public remote servers that need no setup: DeepWiki, and Context7 (which needs the
+proxy fix in PR #20). To try the
 **local** server flow (download → checksum → run → JWT verified by the server) without a release:
 
 ```sh
@@ -85,7 +86,7 @@ CI runs the same script on every PR, plus mutation testing and CodeQL. See [`evi
    permission prompt for `mcp-hub enable service-directory`, because the skill pre-approves only read-only commands.
 3. mcp-hub downloads and checksums the server, starts it, and adds `hub__service-directory` →
    `http://127.0.0.1:7420/mcp/service-directory` to `~/.claude.json`.
-4. **Restart Claude Code** so it loads the new server (`/reload-plugins` may also work; not yet confirmed).
+4. Run **`/reload-plugins`** (or restart Claude Code) so it loads the new server.
 5. Ask *"which services are tagged payments?"*. Claude calls `find_service` through the proxy, which injects a JWT
    (`sub` = you, `aud` = `service-directory`); the server verifies it.
 6. The UI's **Activity** tab (and `~/.mcp-hub/audit.jsonl`) shows the call. Arguments and results are never recorded.
@@ -101,13 +102,12 @@ For *Payments Sandbox*, the skill tells Claude to explain that it was revoked an
 ## Known limitations
 
 - The `curl | bash` install needs a published `v*` release; macOS only (no Windows/Linux installer).
-- Claude Code must be restarted after enable/disable (`/reload-plugins` may also work; a gateway entry would remove this step; ADR 4).
+- After enable/disable Claude Code needs `/reload-plugins` (or a restart) to see the change; a gateway entry would remove this step (ADR 4).
 - Nothing **enforces** use of the hub: a developer can still `claude mcp add` by hand. Production would use managed
   Claude Code settings (ADR 3).
 - The token issuer is local, standing in for the bank's IdP; artifacts are checksummed but not signed.
 - Local servers run as the user's processes (no container sandbox); a crashed server is not auto-restarted.
 - The catalogue is embedded or a local file, not a central service: a revoke takes effect once the laptop has the
   updated catalogue (new release or `MCP_HUB_CATALOGUE` file) and the daemon restarts. Fleet-wide push is not built.
-- Enable/disable, the runner and the e2e test are in PR #15 at the time of writing.
 
 More in [`evidence/verify.md`](evidence/verify.md#known-gaps) and [`evidence/design.md`](evidence/design.md).

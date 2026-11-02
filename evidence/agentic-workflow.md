@@ -42,8 +42,11 @@ builder (worktree) ── red → green commits ── verify.sh ── push onc
 | #13 | CodeQL log-injection fixes | yes |
 | #14 | F2 CLI, skill, installer, release | yes |
 | #16 | CI builds the shippable binary | yes |
+| #15 | F1 hub service, runner, daemon, e2e | yes |
 | #17 | Catalogue: real service-directory v0.1.0 checksums | yes |
-| #15 | F1 hub service, runner, daemon, e2e | open at time of writing (review fixes done) |
+| #18 | H evidence pack + README (this) | open |
+| #20 | Proxy: accept Context7's chunked 202 with no content type (found by human hands-on testing) | open at time of writing |
+| #21 | Publishing guide for MCP server authors | open at time of writing |
 
 ## Representative steering prompts (excerpts)
 
@@ -63,7 +66,8 @@ builder (worktree) ── red → green commits ── verify.sh ── push onc
 | Asked for a vulnerability-scanning layer | PR #5: CodeQL (PR, main, weekly), Dependabot, `npm audit` alongside govulncheck and gosec |
 | Corrected the token model | the hub JWT carries user identity (`sub`) so servers can call their own APIs on the user's behalf; see design.md |
 | Found Claude bypassing the hub with `claude mcp add` | skill wording, plus decisions.md ADR 3 (managed settings) |
-| Tested the slice by hand in Claude Code via the skill | enabled remote DeepWiki and local service-directory, called tools; the server verified the hub token and the audit log showed `find_service` |
+| Tested the slice by hand in Claude Code via the skill; confirmed `/reload-plugins` loads newly enabled servers | enabled remote DeepWiki and local service-directory, called tools; the server verified the hub token and the audit log showed `find_service` |
+| Hands-on test found `hub__context7` failing with `start_failed` | Context7 answers notifications with a chunked 202 and no content type, which the proxy's content-type guard blocked; fix in PR #20 (202 passed through with its body dropped) |
 
 ## Notable reviewer catches
 
@@ -103,4 +107,6 @@ connection pattern, concurrency, and what a hostile counterpart could send back.
 - **F2:** running the installer in a throwaway `HOME` found launchd deferring the spawn (`ProcessType Background`);
   fixed with `launchctl kickstart`.
 - **F1:** writing hub tests after the slice still found a real bug (failed re-enable stopped routing to a healthy
-  server). The e2e first failed because redirecting `HOME` before `go build` moved the module cache into `t.TempDir()`.
+  server). Lesson from its review: a fake that exits for an unrelated reason makes a timeout test pass for the wrong
+  reason, so assert the intermediate state (child alive before, gone after). Also caught: macOS `tar` added an
+  AppleDouble `._mcp-server` to the dev archive, so it is now built with the example's `mktar`. The e2e first failed because redirecting `HOME` before `go build` moved the module cache into `t.TempDir()`.

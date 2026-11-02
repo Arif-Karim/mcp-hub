@@ -37,13 +37,13 @@ Taken from the PR descriptions (gremlins, timeout coefficient 20, mostly single-
 | `internal/cli` | 94.0% (63 killed / 4 lived) | PR #14 |
 | `internal/hub`, `internal/server`, `cmd/mcp-hub` | 100% (39, 25, 18 killed) | PR #15 |
 | `internal/daemon` | 90% (9 killed / 1 lived: a drain-timeout warning log) | PR #15 |
-| `internal/runner` | 86.2% (25 killed / 4 lived / 3 timed out; survivors are timing boundaries) | PR #15 (after review fixes; was 80.8%) |
+| `internal/runner` | 86.2% (25 killed / 4 lived / 3 timed out; survivors are timing boundaries) | PR #15 (after review fixes, pre-rebase run; was 80.8%) |
 
-Total Go coverage over `internal/...`: **92.8%** (PR #15; 91.3% on main after PR #14). UI: 71 Vitest tests in 9 files (`npm test`).
+Total Go coverage over `internal/...`: **92.8%** (`verify.sh` on main after PR #15). UI: 71 Vitest tests in 9 files (`npm test`).
 
 ## End-to-end test
 
-`e2e/e2e_test.go` `TestEnableCallDisable` (PR #15) runs inside `verify.sh`, all under `t.TempDir()` on a random port:
+`e2e/e2e_test.go` `TestEnableCallDisable` runs inside `verify.sh`, all under `t.TempDir()` on a random port:
 
 1. Builds `examples/mcp-server-template`, packages it as tar.gz and serves it from a fake registry with its real sha256.
 2. Starts the real daemon (same `internal/daemon` graph as `serve`).
@@ -59,8 +59,6 @@ end via the skill in Claude Code (remote DeepWiki and local service-directory; t
 audit log showed `find_service`); see agentic-workflow.md.
 
 ## Guarded failures
-
-Tests in `internal/hub`, `internal/runner`, `internal/daemon`, `e2e/` and `cmd/mcp-hub/serve_test.go` land with PR #15.
 
 | Failure | Behaviour | Proving test(s) |
 |---|---|---|
