@@ -23,6 +23,9 @@ import (
 // started or never became healthy.
 var ErrStartFailed = errors.New("mcp server failed to start")
 
+// ErrClosed: the runner has been stopped (daemon shutdown). It wraps ErrStartFailed.
+var ErrClosed = fmt.Errorf("%w: runner closed", ErrStartFailed)
+
 // Defaults for Runner.
 const (
 	DefaultHealthTimeout = 10 * time.Second
@@ -37,8 +40,12 @@ type Runner struct {
 	HealthTimeout time.Duration // <= 0: DefaultHealthTimeout
 	StopTimeout   time.Duration // <= 0: DefaultStopTimeout
 
-	mu    sync.Mutex
-	procs map[string]*Proc
+	mu       sync.Mutex // guards the fields below; never held while waiting
+	procs    map[string]*Proc
+	locks    map[string]*sync.Mutex // per-id: serialises Start/Stop of one id
+	closed   bool
+	quit     chan struct{} // closed by StopAll; aborts in-flight health waits
+	inflight sync.WaitGroup
 }
 
 // Proc is one started server process.
@@ -67,6 +74,9 @@ func (p *Proc) Running() bool {
 	}
 }
 
+// Done is closed once the process has exited.
+func (p *Proc) Done() <-chan struct{} { return p.done }
+
 // Err is the exit error once the process has exited (nil while running or
 // after a clean exit).
 func (p *Proc) Err() error {
@@ -91,12 +101,16 @@ func (r *Runner) Start(ctx context.Context, id, exePath string, env map[string]s
 	if !safeID(id) {
 		return nil, fmt.Errorf("%w: invalid id %q", ErrStartFailed, id)
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if p, ok := r.procs[id]; ok && p.Running() {
+	quit, err := r.enter()
+	if err != nil {
+		return nil, err
+	}
+	defer r.inflight.Done()
+	defer r.lockID(id)()
+	if p, ok := r.Get(id); ok && p.Running() {
 		return p, nil
 	}
-	delete(r.procs, id)
+	r.forget(id)
 
 	if err := os.MkdirAll(r.LogDir, 0o700); err != nil {
 		return nil, fmt.Errorf("%w: log dir: %w", ErrStartFailed, err)
@@ -125,6 +139,9 @@ func (r *Runner) Start(ctx context.Context, id, exePath string, env map[string]s
 	p := &Proc{port: port, cmd: cmd, done: make(chan struct{})}
 	go func() {
 		err := cmd.Wait()
+		// Whatever ended the leader, take the rest of its group with it so no
+		// grandchild is orphaned (it would keep the port or the log open).
+		signalGroup(cmd, true)
 		_ = logf.Close()
 		p.mu.Lock()
 		p.err = err
@@ -132,20 +149,63 @@ func (r *Runner) Start(ctx context.Context, id, exePath string, env map[string]s
 		close(p.done)
 	}()
 
-	if err := r.waitHealthy(ctx, p); err != nil {
+	if err := r.waitHealthy(ctx, quit, p); err != nil {
 		r.terminate(p)
 		return nil, fmt.Errorf("%w: %s: %w\n%s", ErrStartFailed, id, err, logTail(logPath))
+	}
+	r.mu.Lock()
+	if r.closed { // StopAll ran while we were starting
+		r.mu.Unlock()
+		r.terminate(p)
+		return nil, ErrClosed
 	}
 	if r.procs == nil {
 		r.procs = map[string]*Proc{}
 	}
 	r.procs[id] = p
+	r.mu.Unlock()
 	return p, nil
 }
 
+// enter registers an in-flight Start, or fails once StopAll has run.
+func (r *Runner) enter() (<-chan struct{}, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return nil, ErrClosed
+	}
+	if r.quit == nil {
+		r.quit = make(chan struct{})
+	}
+	r.inflight.Add(1)
+	return r.quit, nil
+}
+
+func (r *Runner) forget(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.procs, id)
+}
+
+// lockID serialises Start/Stop of one id and returns the unlock func.
+func (r *Runner) lockID(id string) func() {
+	r.mu.Lock()
+	if r.locks == nil {
+		r.locks = map[string]*sync.Mutex{}
+	}
+	l, ok := r.locks[id]
+	if !ok {
+		l = &sync.Mutex{}
+		r.locks[id] = l
+	}
+	r.mu.Unlock()
+	l.Lock()
+	return l.Unlock
+}
+
 // waitHealthy polls /healthz until 200, the process exits, the timeout
-// passes or ctx ends.
-func (r *Runner) waitHealthy(ctx context.Context, p *Proc) error {
+// passes, ctx ends or StopAll runs.
+func (r *Runner) waitHealthy(ctx context.Context, quit <-chan struct{}, p *Proc) error {
 	timeout := time.NewTimer(orDefault(r.HealthTimeout, DefaultHealthTimeout))
 	defer timeout.Stop()
 	tick := time.NewTicker(pollInterval)
@@ -162,6 +222,8 @@ func (r *Runner) waitHealthy(ctx context.Context, p *Proc) error {
 			return errors.New("not healthy before timeout")
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-quit:
+			return ErrClosed
 		case <-tick.C:
 		}
 	}
@@ -180,9 +242,11 @@ func healthy(ctx context.Context, c *http.Client, url string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// Stop terminates id's process (SIGTERM to its group, SIGKILL after
-// StopTimeout) and forgets it. Stopping an unknown id is a no-op.
+// Stop terminates id's process (SIGTERM to its group, SIGKILL to the group
+// after StopTimeout) and forgets it. A Start of the same id in progress is
+// waited for first. Stopping an unknown id is a no-op.
 func (r *Runner) Stop(id string) error {
+	defer r.lockID(id)()
 	r.mu.Lock()
 	p, ok := r.procs[id]
 	delete(r.procs, id)
@@ -193,8 +257,19 @@ func (r *Runner) Stop(id string) error {
 	return nil
 }
 
-// StopAll stops every process (daemon shutdown).
+// StopAll is daemon shutdown: it refuses new Starts, aborts in-flight ones
+// (their processes are killed), waits for them, then stops every process.
 func (r *Runner) StopAll() {
+	r.mu.Lock()
+	if !r.closed {
+		r.closed = true
+		if r.quit != nil {
+			close(r.quit)
+		}
+	}
+	r.mu.Unlock()
+	r.inflight.Wait()
+
 	r.mu.Lock()
 	procs := r.procs
 	r.procs = nil
@@ -206,6 +281,9 @@ func (r *Runner) StopAll() {
 	wg.Wait()
 }
 
+// terminate sends SIGTERM to the group, escalates to SIGKILL after the grace
+// period, and returns once the leader is reaped (the reaper then SIGKILLs any
+// group members left, e.g. a grandchild that ignores SIGTERM).
 func (r *Runner) terminate(p *Proc) {
 	signalGroup(p.cmd, false)
 	grace := time.NewTimer(orDefault(r.StopTimeout, DefaultStopTimeout))
@@ -264,9 +342,3 @@ func orDefault(d, def time.Duration) time.Duration {
 	}
 	return def
 }
-
-// Done is closed once the process has exited.
-func (p *Proc) Done() <-chan struct{} { return p.done }
-
-// ErrClosed: the runner has been stopped (daemon shutdown); it wraps ErrStartFailed.
-var ErrClosed = fmt.Errorf("%w: runner closed", ErrStartFailed)
