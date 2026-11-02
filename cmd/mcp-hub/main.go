@@ -79,6 +79,17 @@ func serve(args []string) error {
 	if source == "" {
 		source = "embedded"
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Bind before touching anything: a second daemon fails here ("address in
+	// use") instead of restarting duplicate server processes.
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", *addr)
+	if err != nil {
+		return err
+	}
 	d, err := daemon.New(daemon.Config{
 		Home:             filepath.Dir(paths.Ledger),
 		ClaudeConfigPath: paths.ClaudeConfig,
@@ -91,25 +102,22 @@ func serve(args []string) error {
 		Logger:           logger,
 	})
 	if err != nil {
+		_ = ln.Close()
 		return err
 	}
 	defer func() { _ = d.Close() }()
-	d.Restore(context.Background())
+	d.Restore(ctx)
 
 	srv := &http.Server{
-		Addr:              *addr,
 		Handler:           d.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("mcp-hub listening", "addr", *addr, "version", version.Version, "home", filepath.Dir(paths.Ledger),
 			"claudeConfig", paths.ClaudeConfig, "catalogue", source, "enabled", d.Hub.EnabledCount())
-		errCh <- srv.ListenAndServe()
+		errCh <- srv.Serve(ln)
 	}()
 
 	select {

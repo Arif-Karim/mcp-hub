@@ -132,3 +132,19 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
 - A tampered `checksums.txt` was checked by hand: the installer aborts at the verify step and `~/.local/bin` is never created.
 - `uninstall-config` exits 0 when it keeps user-edited `hub__*` entries (`PartialRemoveError`). Leaving them in place is the
   safe outcome, and failing would block `install.sh --uninstall` from removing everything else.
+
+### Lane F1 (hub service: runner, enable/disable orchestration, API, daemon wiring, e2e)
+- Builder subagent, branch `lane-f1-hub-service`. Runner went red → green first (TestMain re-exec: the test binary is its
+  own fake server — healthy, never-healthy, crash-after, ignores SIGTERM — so no network or example module needed).
+- **Mid-lane re-prioritisation from the human:** "they can't test anything end to end yet" → ship the thinnest complete
+  vertical slice first. Hub service, routes, daemon wiring and `scripts/dev-registry.sh` landed as one commit,
+  smoke-tested by hand (DeepWiki through the proxy; local service-directory `find_service` through the proxy with the
+  injected JWT verified by the server) and pushed as a draft PR with try-it steps before the unit tests. Tests followed in
+  the same PR; the TDD pairing is therefore weaker for `internal/hub` than for the runner (called out honestly here).
+- Writing the hub tests afterwards still found a real bug, fixed red → green: a failed re-enable (config conflict) of an
+  already-running server marked it `error` and the proxy stopped routing to it.
+- `serve` construction moved into `internal/daemon` so the e2e test and the binary build the exact same graph.
+- The e2e initially failed because redirecting `HOME` before `go build` moved the Go module cache into `t.TempDir()`
+  (read-only module files broke cleanup) → build first, then redirect `HOME`.
+- Dev-catalogue: catalogue validation rejects `file://` artifact URLs (only https or loopback http) — kept that rule and
+  serve the dev artifact from a loopback `python3 -m http.server` instead of widening the registry.
