@@ -47,6 +47,13 @@ if [[ -f web/package.json ]]; then
   fi
 fi
 
+step "build: shippable binary with embedded UI + smoke test"
+go build -trimpath -o bin/mcp-hub ./cmd/mcp-hub
+bin/mcp-hub version
+if [[ -f examples/mcp-server-template/go.mod ]]; then
+  (cd examples/mcp-server-template && go build -trimpath -o ../../bin/example-mcp-server ./cmd/mcp-server)
+fi
+
 if [[ "${1:-}" == "--mutation" ]]; then
   step "mutation testing (changed packages)"
   scripts/mutation.sh
