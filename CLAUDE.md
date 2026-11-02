@@ -58,6 +58,6 @@ record it in the ledger `~/.mcp-hub/state.json`. Claude Code config never contai
 - Reviewers post **one** review (`gh pr review --comment --body-file ...`) with all findings batched. No per-line comment storms.
 - After fixing review findings, post **one** PR comment headed `Review findings → fixes` mapping each finding to its fix (commit sha) or why not, plus final verify/mutation numbers.
 - Merge gate: `scripts/pr-ready.sh <n>` (checks green, 0 code-scanning alerts on the PR ref, 0 bot comments, final findings comment). Branch protection on `main` requires verify, mutation and both CodeQL analyses.
-- Hooks in `.claude/settings.json` enforce these rules: builders cannot `gh pr merge`, force-push, push to `main`, push tags, cut releases or change repo settings (`scripts/hooks/guard-bash.sh`); `.go` files are gofmt'd after every edit.
+- Hooks in `.claude/settings.json` enforce these rules: builders cannot `gh pr merge`, force-push, push to `main`, push tags, cut releases or change repo settings (`scripts/hooks/guard-bash.py`, parses commands with `shlex`, fails closed); `.go` files are gofmt'd after every edit.
 - Never merge, force-push to `main`, or rewrite history. The human merges (merge commits only).
 - If `main` moved, `git rebase origin/main` on your branch before pushing (your branch only).

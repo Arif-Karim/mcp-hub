@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Table test for guard-bash.sh: feeds Claude Code PreToolUse JSON and checks
+# Table test for guard-bash.py: feeds Claude Code PreToolUse JSON and checks
 # the exit code (2 = blocked, 0 = allowed).
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 fail=0
 check() {
   local want="$1" cmd="$2" got=0
-  jq -n --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}' | ./guard-bash.sh >/dev/null 2>&1 || got=$?
+  jq -n --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}' | ./guard-bash.py >/dev/null 2>&1 || got=$?
   if [[ "$got" != "$want" ]]; then
     echo "FAIL: want exit $want, got $got: $cmd"; fail=1
   fi
@@ -54,7 +54,7 @@ check 0 'gh pr view 12 --json state'
 check 0 'go test ./...'
 check 0 'grep -n "gh pr merge" docs/x.md'
 # Missing input or jq fails closed.
-got=0; echo 'not json' | ./guard-bash.sh >/dev/null 2>&1 || got=$?
+got=0; echo 'not json' | ./guard-bash.py >/dev/null 2>&1 || got=$?
 [[ "$got" == 2 ]] || { echo "FAIL: bad input should block, got $got"; fail=1; }
 # Orchestrator override is explicit and visible in the transcript.
 check 0 'MCP_HUB_ORCHESTRATOR=1 gh pr merge 12 --merge'
