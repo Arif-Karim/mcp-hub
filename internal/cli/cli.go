@@ -1,6 +1,6 @@
 // Package cli implements the mcp-hub client subcommands (search, info, enable,
-// disable, status, uninstall-config). They talk to the local daemon's
-// /api/v1 control plane; uninstall-config works offline on the Claude config.
+// disable, status, uninstall-config, install-skill). They talk to the local
+// daemon's /api/v1 control plane; uninstall-config and install-skill work offline.
 //
 // Commands never call os.Exit: Run returns the exit code so tests can assert it.
 package cli
@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Arif-Karim/mcp-hub/internal/claudeconfig"
+	"github.com/Arif-Karim/mcp-hub/internal/skillfiles"
 )
 
 // Exit codes.
@@ -39,6 +40,8 @@ type Env struct {
 	Addr           string // daemon host:port; empty means DefaultAddr
 	// Config opens the Claude config writer and returns the config path (for messages).
 	Config func() (ConfigRemover, string, error)
+	// ClaudeDir returns the Claude Code directory (~/.claude) install-skill writes into.
+	ClaudeDir func() (string, error)
 }
 
 // DefaultEnv wires the process environment.
@@ -54,6 +57,7 @@ func DefaultEnv() Env {
 			}
 			return &claudeconfig.Writer{Paths: p}, p.ClaudeConfig, nil
 		},
+		ClaudeDir: skillfiles.DefaultClaudeDir,
 	}
 }
 
@@ -79,6 +83,7 @@ var commands = map[string]command{
 	"disable":          {run: disable, jsonFlag: true, minArgs: 1, maxArgs: 1},
 	"status":           {run: status, jsonFlag: true},
 	"uninstall-config": {run: uninstallConfig},
+	"install-skill":    {run: installSkill},
 }
 
 // Handles reports whether cmd is a CLI subcommand implemented here.
@@ -207,6 +212,7 @@ Usage:
   mcp-hub disable <id> [--json]      stop and remove hub__<id> from Claude Code
   mcp-hub status [--json]            daemon status and enabled servers
   mcp-hub uninstall-config           remove every mcp-hub entry from Claude Code config (offline)
+  mcp-hub install-skill              install/update the Claude Code skill in ~/.claude/skills (offline)
   mcp-hub version                    print the version
   mcp-hub help                       this help
 
@@ -216,6 +222,8 @@ Environment:
   MCP_HUB_ADDR        daemon address (default 127.0.0.1:7420, loopback only)
   MCP_HUB_HOME        state, logs and audit directory (default ~/.mcp-hub)
   CLAUDE_CONFIG_PATH  Claude Code user config (default ~/.claude.json)
+  CLAUDE_HOME_DIR     Claude Code directory the skill is installed under
+                      (default $CLAUDE_CONFIG_DIR, else ~/.claude)
 
 Exit codes: 0 ok, 1 error, 2 usage/validation/not approved, 3 daemon not running.
 `

@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch: # e.g. run the macOS installer job on a branch: gh workflow run ci.yml --ref <branch>
 
 permissions:
   contents: read
@@ -56,7 +57,7 @@ jobs:
   # End-to-end install on a real Mac: package -> install.sh -> health -> uninstall.
   # Push to main only, to keep macOS minutes low.
   installer:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -86,6 +87,9 @@ jobs:
           ./install.sh --local-artifact dist --no-launchd --no-open --skip-claude
           test -x "$HOME/.local/bin/mcp-hub"
           test -f "$HOME/.claude/skills/mcp-hub/SKILL.md"
+          tar -tzf dist/mcp-hub_darwin_arm64.tar.gz > "$RUNNER_TEMP/tarlist"
+          if grep -q '^skill/' "$RUNNER_TEMP/tarlist"; then echo 'skill should ship inside the binary only'; exit 1; fi
+          head -n 2 "$HOME/.claude/skills/mcp-hub/SKILL.md" | grep -q '^name: mcp-hub$'
           curl -fsS http://127.0.0.1:7420/api/v1/health | grep -q '"status":"ok"'
           "$HOME/.local/bin/mcp-hub" search --json | grep -q '"items"'
           ./install.sh --uninstall

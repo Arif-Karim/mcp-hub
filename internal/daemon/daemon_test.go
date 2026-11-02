@@ -169,6 +169,43 @@ func TestDaemonWiring(t *testing.T) {
 	}
 }
 
+func TestDaemonSkillStatusAndInstall(t *testing.T) {
+	f := newFixture(t, catalogue.ApprovalApproved)
+	f.cfg.ClaudeDir = filepath.Join(t.TempDir(), ".claude")
+	h := f.start(t).Handler()
+	skillOf := func() map[string]any {
+		t.Helper()
+		code, body := call(t, h, http.MethodGet, "/api/v1/status", "")
+		var st struct {
+			Skill map[string]any `json:"skill"`
+		}
+		if err := json.Unmarshal([]byte(body), &st); code != 200 || err != nil {
+			t.Fatalf("status = %d %s", code, body)
+		}
+		return st.Skill
+	}
+	path := filepath.Join(f.cfg.ClaudeDir, "skills", "mcp-hub", "SKILL.md")
+	if got := skillOf(); got["installed"] != false || got["upToDate"] != false || got["path"] != path {
+		t.Fatalf("skill before install = %v", got)
+	}
+	if code, body := call(t, h, http.MethodPost, "/api/v1/skill/install", ""); code != 200 || !strings.Contains(body, `"installed":true`) {
+		t.Fatalf("install = %d %s", code, body)
+	}
+	if got := skillOf(); got["installed"] != true || got["upToDate"] != true {
+		t.Fatalf("skill after install = %v", got)
+	}
+}
+
+func TestDaemonWithoutClaudeDirHasNoSkill(t *testing.T) {
+	h := newFixture(t, catalogue.ApprovalApproved).start(t).Handler()
+	if _, body := call(t, h, http.MethodGet, "/api/v1/status", ""); strings.Contains(body, `"skill"`) {
+		t.Fatalf("status without ClaudeDir = %s, want no skill", body)
+	}
+	if code, _ := call(t, h, http.MethodPost, "/api/v1/skill/install", ""); code != http.StatusNotFound {
+		t.Fatalf("install without ClaudeDir = %d, want 404", code)
+	}
+}
+
 func TestDaemonRestoreAutoDisablesRevoked(t *testing.T) {
 	f := newFixture(t, catalogue.ApprovalApproved)
 	d := f.start(t)

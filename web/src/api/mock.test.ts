@@ -94,4 +94,27 @@ describe('mockClient', () => {
     first.state.enabled = true
     expect((await c.getItem('service-directory')).state.enabled).toBe(false)
   })
+
+  it('reports the skill as not installed until installSkill() is called', async () => {
+    const c = fast()
+    expect((await c.status()).skill).toEqual({
+      installed: false,
+      upToDate: false,
+      path: '/Users/dev/.claude/skills/mcp-hub/SKILL.md',
+    })
+    expect(await c.installSkill()).toMatchObject({ installed: true, upToDate: true })
+    expect((await c.status()).skill).toMatchObject({ installed: true, upToDate: true })
+  })
+
+  it('can start with an outdated skill', async () => {
+    const c = createMockClient({ latencyMs: 0, skill: { installed: true, upToDate: false } })
+    expect((await c.status()).skill).toMatchObject({ installed: true, upToDate: false })
+  })
+
+  it('returns skill copies so callers cannot mutate mock state', async () => {
+    const c = fast()
+    const st = await c.installSkill()
+    st.installed = false
+    expect((await c.status()).skill?.installed).toBe(true)
+  })
 })

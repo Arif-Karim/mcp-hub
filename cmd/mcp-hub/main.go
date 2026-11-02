@@ -20,6 +20,7 @@ import (
 	"github.com/Arif-Karim/mcp-hub/internal/claudeconfig"
 	"github.com/Arif-Karim/mcp-hub/internal/cli"
 	"github.com/Arif-Karim/mcp-hub/internal/daemon"
+	"github.com/Arif-Karim/mcp-hub/internal/skillfiles"
 	"github.com/Arif-Karim/mcp-hub/internal/version"
 	"github.com/Arif-Karim/mcp-hub/internal/webui"
 )
@@ -100,6 +101,7 @@ func serve(args []string) error {
 		User:             currentUser(),
 		UI:               webui.Handler(),
 		Logger:           logger,
+		ClaudeDir:        claudeDir(),
 	})
 	if err != nil {
 		_ = ln.Close()
@@ -169,6 +171,17 @@ func currentUser() string {
 		return u.Username
 	}
 	return envOr("USER", "developer")
+}
+
+// claudeDir is where the UI installs the embedded Claude Code skill; empty
+// (skill install and Status.skill disabled) when it cannot be resolved.
+func claudeDir() string {
+	dir, err := skillfiles.DefaultClaudeDir()
+	if err != nil {
+		slog.Warn("Claude Code skill install disabled", "err", err)
+		return ""
+	}
+	return dir
 }
 
 func envOr(key, def string) string {

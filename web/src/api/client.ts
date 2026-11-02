@@ -1,5 +1,5 @@
 import { ERROR_CODES } from './types'
-import type { AuditEvent, CatalogueItem, CatalogueQuery, ErrorCode, Status } from './types'
+import type { AuditEvent, CatalogueItem, CatalogueQuery, ErrorCode, SkillStatus, Status } from './types'
 
 /** Contract codes plus two client-side ones: daemon unreachable, and unrecognised codes. */
 export type ApiErrorCode = ErrorCode | 'network' | 'unknown'
@@ -23,6 +23,8 @@ export interface ApiClient {
   enable(id: string): Promise<CatalogueItem>
   disable(id: string): Promise<CatalogueItem>
   audit(limit?: number): Promise<AuditEvent[]>
+  /** Install or update the Claude Code skill embedded in the daemon. */
+  installSkill(): Promise<SkillStatus>
 }
 
 const BASE = '/api/v1'
@@ -78,4 +80,5 @@ export const httpClient: ApiClient = {
     const body = await request<{ events: AuditEvent[] }>(`/audit?limit=${limit}`)
     return body.events
   },
+  installSkill: () => request<SkillStatus>('/skill/install', { method: 'POST' }),
 }

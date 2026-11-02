@@ -35,7 +35,7 @@ onBeforeUnmount(() => clearInterval(timer))
   <AppHeader v-model:tab="tab" :status="status" :health="health" />
   <main class="main">
     <KeepAlive include="CatalogueView">
-      <CatalogueView v-if="tab === 'catalogue'" :client="api" @changed="refreshStatus" />
+      <CatalogueView v-if="tab === 'catalogue'" :client="api" :skill="status?.skill" @changed="refreshStatus" />
       <ActivityView v-else :client="api" />
     </KeepAlive>
   </main>

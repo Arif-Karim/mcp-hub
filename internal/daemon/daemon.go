@@ -22,6 +22,7 @@ import (
 	"github.com/Arif-Karim/mcp-hub/internal/registry"
 	"github.com/Arif-Karim/mcp-hub/internal/runner"
 	"github.com/Arif-Karim/mcp-hub/internal/server"
+	"github.com/Arif-Karim/mcp-hub/internal/skillfiles"
 	"github.com/Arif-Karim/mcp-hub/internal/token"
 )
 
@@ -41,6 +42,8 @@ type Config struct {
 	Logger           *slog.Logger
 	// RegistryClient downloads artifacts; nil uses the registry default.
 	RegistryClient *http.Client
+	// ClaudeDir is the Claude Code directory the embedded skill installs into; empty disables it.
+	ClaudeDir string
 }
 
 // Daemon is a constructed, not yet serving, hub.
@@ -94,6 +97,10 @@ func New(cfg Config) (*Daemon, error) {
 		Issuer:    Issuer,
 		Logger:    cfg.Logger,
 	})
+	var skill server.Skill
+	if cfg.ClaudeDir != "" {
+		skill = skillfiles.Manager{ClaudeDir: cfg.ClaudeDir}
+	}
 	h := server.New(server.Options{
 		Version:   cfg.Version,
 		UI:        cfg.UI,
@@ -103,6 +110,7 @@ func New(cfg Config) (*Daemon, error) {
 		Proxy:     proxy.New(proxy.Config{Resolver: svc, Tokens: issuer, Audit: auditLog, User: cfg.User}),
 		JWKS:      issuer.JWKSHandler(),
 		Audit:     auditLog,
+		Skill:     skill,
 		Status: func() server.Status {
 			return server.Status{
 				Version: cfg.Version, Addr: cfg.Addr, ClaudeConfigPath: cfg.ClaudeConfigPath,

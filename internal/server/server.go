@@ -29,6 +29,8 @@ type Options struct {
 	Servers Enabler
 	// Status backs GET /api/v1/status. Nil disables it.
 	Status func() Status
+	// Skill backs POST /api/v1/skill/install. Nil disables it.
+	Skill Skill
 }
 
 // New returns the root handler.
@@ -48,9 +50,12 @@ func New(opts Options) http.Handler {
 		}
 	}
 	if opts.Status != nil {
-		registerStatus(mux, opts.Status)
+		registerStatus(mux, opts.Status, opts.Skill)
 	}
 	registerLaneC(mux, opts)
+	if opts.Skill != nil {
+		registerSkill(mux, opts.Skill)
+	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "no such API route")
 	})

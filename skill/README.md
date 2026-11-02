@@ -1,6 +1,9 @@
 # mcp-hub Claude Code skill
 
-`skill/mcp-hub/SKILL.md` teaches Claude Code to use the `mcp-hub` CLI, so a developer can say
+The skill lives in [`internal/skillfiles/mcp-hub/SKILL.md`](../internal/skillfiles/mcp-hub/SKILL.md) and is
+embedded in the `mcp-hub` binary (`go:embed`). That file is the only copy: a test fails if one reappears here.
+
+It teaches Claude Code to use the `mcp-hub` CLI, so a developer can say
 "find me an MCP server for service ownership" or "connect Claude to Jira" and Claude will search the
 governed catalogue, explain the options (owner, classification, approval, tools), ask for confirmation
 and run `mcp-hub enable <id>`.
@@ -16,12 +19,13 @@ Guardrails written into the skill:
 
 ## Install
 
-`install.sh` copies `skill/mcp-hub/` from the release tarball to `~/.claude/skills/mcp-hub/`
-(user scope, available in every project). `install.sh --uninstall` removes it. To try it from a
-checkout without the installer:
+Any of these writes `~/.claude/skills/mcp-hub/SKILL.md` (user scope, available in every project) from the
+skill embedded in the binary, so the installed skill always matches the binary's version:
 
-```sh
-mkdir -p ~/.claude/skills && cp -R skill/mcp-hub ~/.claude/skills/
-```
+- `install.sh` runs `mcp-hub install-skill` (and `install.sh --uninstall` removes it);
+- `mcp-hub install-skill` on its own (works offline). The directory is `$CLAUDE_HOME_DIR`, else Claude Code's own
+  `$CLAUDE_CONFIG_DIR`, else `~/.claude`;
+- the web UI's **Install skill** / **Update skill** banner (`POST /api/v1/skill/install`), shown when the skill
+  is missing or older than the running binary.
 
-Restart Claude Code after installing so it picks the skill up.
+Then run `/reload-plugins` in Claude Code (or restart it) so it picks the skill up.

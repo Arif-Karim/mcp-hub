@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import type { ApiClient } from '../api/client'
-import type { CatalogueItem, Kind } from '../api/types'
+import type { CatalogueItem, Kind, SkillStatus } from '../api/types'
 import { errorMessage } from '../lib/errors'
 import { filterItems } from '../lib/filter'
 import { pushToast } from '../lib/toast'
 import ClaudeCallout from './ClaudeCallout.vue'
 import DetailDrawer from './DetailDrawer.vue'
 import ServerCard from './ServerCard.vue'
+import SkillBanner from './SkillBanner.vue'
 
-const props = withDefaults(defineProps<{ client: ApiClient; debounceMs?: number }>(), { debounceMs: 250 })
+const props = withDefaults(defineProps<{ client: ApiClient; skill?: SkillStatus; debounceMs?: number }>(), {
+  skill: undefined,
+  debounceMs: 250,
+})
 const emit = defineEmits<{ changed: [] }>()
 
 const items = ref<CatalogueItem[]>([])
@@ -82,7 +86,8 @@ async function toggle(item: CatalogueItem) {
 
 <template>
   <section aria-labelledby="catalogue-heading">
-    <ClaudeCallout />
+    <SkillBanner :skill="skill" :client="client" @installed="emit('changed')" />
+    <ClaudeCallout v-if="skill?.installed" />
 
     <div class="toolbar">
       <h2 id="catalogue-heading" class="sr-only">Catalogue</h2>

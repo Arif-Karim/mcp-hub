@@ -44,6 +44,14 @@ export interface Health {
   version: string
 }
 
+/** The mcp-hub Claude Code skill. Without it Claude can't find or enable servers for the user. */
+export interface SkillStatus {
+  installed: boolean
+  /** Installed copy matches the one embedded in the running daemon. */
+  upToDate: boolean
+  path: string
+}
+
 export interface Status {
   version: string
   addr: string
@@ -51,6 +59,8 @@ export interface Status {
   enabledCount: number
   catalogueSource: string
   user: string
+  /** Absent when the daemon cannot manage the skill (e.g. an older daemon). */
+  skill?: SkillStatus
 }
 
 /** One proxied MCP request. Tool arguments and results are never recorded. */

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
 	"github.com/Arif-Karim/mcp-hub/internal/httpx"
+	"github.com/Arif-Karim/mcp-hub/internal/skillfiles"
 )
 
 // Enabler enables and disables catalogue entries (hub.Service).
@@ -23,6 +24,8 @@ type Status struct {
 	EnabledCount     int    `json:"enabledCount"`
 	CatalogueSource  string `json:"catalogueSource"`
 	User             string `json:"user"`
+	// Skill is filled from Options.Skill; absent when the daemon cannot manage the skill.
+	Skill *skillfiles.State `json:"skill,omitempty"`
 }
 
 func registerServers(mux *http.ServeMux, store *catalogue.Store, ctl Enabler) {
@@ -53,9 +56,14 @@ func registerServers(mux *http.ServeMux, store *catalogue.Store, ctl Enabler) {
 	mux.HandleFunc("/api/v1/servers/{id}/disable", post)
 }
 
-func registerStatus(mux *http.ServeMux, status func() Status) {
+func registerStatus(mux *http.ServeMux, status func() Status, skill Skill) {
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, _ *http.Request) {
-		httpx.WriteJSON(w, http.StatusOK, status())
+		s := status()
+		if skill != nil {
+			st := skill.State()
+			s.Skill = &st
+		}
+		httpx.WriteJSON(w, http.StatusOK, s)
 	})
 	mux.HandleFunc("/api/v1/status", methodNotAllowed)
 }

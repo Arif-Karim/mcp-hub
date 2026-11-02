@@ -4,7 +4,7 @@ import { ApiError } from './client'
 import type { ApiClient, ApiErrorCode } from './client'
 import { fixture } from './fixture'
 import { matchesQuery } from '../lib/filter'
-import type { AuditEvent, CatalogueItem, Status } from './types'
+import type { AuditEvent, CatalogueItem, SkillStatus, Status } from './types'
 
 export interface MockFailure {
   status: number
@@ -19,6 +19,8 @@ export interface MockOptions {
   failures?: Record<string, MockFailure>
   /** Simulate Claude Code making occasional tool calls through enabled servers. */
   liveTraffic?: boolean
+  /** Initial Claude Code skill state; default not installed (a fresh machine). */
+  skill?: Omit<SkillStatus, 'path'>
 }
 
 const USER = 'dev.user@example.test'
@@ -29,6 +31,12 @@ export function createMockClient(opts: MockOptions = {}): ApiClient {
   const failures = { ...opts.failures }
   const items: CatalogueItem[] = structuredClone(fixture)
   const events: AuditEvent[] = []
+  const skill: SkillStatus = {
+    installed: false,
+    upToDate: false,
+    ...opts.skill,
+    path: '/Users/dev/.claude/skills/mcp-hub/SKILL.md',
+  }
 
   const wait = <T>(fn: () => T): Promise<T> =>
     new Promise((resolve, reject) => {
@@ -80,6 +88,7 @@ export function createMockClient(opts: MockOptions = {}): ApiClient {
         enabledCount: items.filter((i) => i.state.enabled).length,
         catalogueSource: 'mock',
         user: USER,
+        skill,
       })),
 
     listCatalogue: (query = {}) =>
@@ -127,6 +136,13 @@ export function createMockClient(opts: MockOptions = {}): ApiClient {
       wait(() => {
         maybeTraffic()
         return events.slice(0, limit)
+      }),
+
+    installSkill: () =>
+      wait(() => {
+        skill.installed = true
+        skill.upToDate = true
+        return skill
       }),
   }
 }

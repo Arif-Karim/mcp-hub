@@ -123,6 +123,21 @@ paths:
                   events:
                     type: array
                     items: { $ref: "#/components/schemas/AuditEvent" }
+  /skill/install:
+    post:
+      summary: Install or update the Claude Code skill embedded in this binary
+      description: |
+        Writes `~/.claude/skills/mcp-hub/SKILL.md` (atomically) from the copy embedded in the daemon.
+        State-changing: a cross-site `Origin` is rejected with 403 like every other POST.
+      operationId: installSkill
+      responses:
+        "200":
+          description: Installed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SkillStatus" }
+        "403": { $ref: "#/components/responses/Error" } # cross-site Origin / non-loopback Host
+        "500": { $ref: "#/components/responses/Error" } # internal (details only in the daemon log)
 components:
   parameters:
     Id:
@@ -208,6 +223,15 @@ components:
         enabledCount: { type: integer }
         catalogueSource: { type: string, example: embedded }
         user: { type: string, description: Subject placed in issued tokens. }
+        skill: { $ref: "#/components/schemas/SkillStatus" }
+    SkillStatus:
+      type: object
+      description: The mcp-hub Claude Code skill. Without it Claude cannot find or enable servers for the user.
+      required: [installed, upToDate, path]
+      properties:
+        installed: { type: boolean, description: "`SKILL.md` exists under the Claude Code skills directory." }
+        upToDate: { type: boolean, description: Installed copy matches the one embedded in this binary. }
+        path: { type: string, example: "/Users/dev/.claude/skills/mcp-hub/SKILL.md" }
     AuditEvent:
       type: object
       description: One proxied MCP request. Tool arguments and results are never recorded.

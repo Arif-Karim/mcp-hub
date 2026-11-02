@@ -61,3 +61,15 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 		t.Fatal("expected usage error with no args")
 	}
 }
+
+func TestClaudeDir(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_HOME_DIR", dir)
+	if got := claudeDir(); got != dir {
+		t.Fatalf("claudeDir() = %q, want %q", got, dir)
+	}
+	t.Setenv("CLAUDE_HOME_DIR", "relative")
+	if got := claudeDir(); got != "" {
+		t.Fatalf("claudeDir() with a relative override = %q, want empty (disabled)", got)
+	}
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # mcp-hub installer (macOS). Installs the mcp-hub binary, the Claude Code skill
-# and a per-user daemon, then opens the marketplace UI.
+# (embedded in the binary; written by `mcp-hub install-skill`) and a per-user
+# daemon, then opens the marketplace UI.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Arif-Karim/mcp-hub/main/install.sh | bash
 #   ./install.sh [options]
@@ -22,7 +23,9 @@ REPO="${MCP_HUB_REPO:-Arif-Karim/mcp-hub}"
 ADDR="${MCP_HUB_ADDR:-127.0.0.1:7420}"
 BIN_DIR="${HOME}/.local/bin"
 BIN="${BIN_DIR}/mcp-hub"
-SKILL_DIR="${HOME}/.claude/skills/mcp-hub"
+# Same order as `mcp-hub install-skill`: mcp-hub override, then Claude Code's own CLAUDE_CONFIG_DIR.
+CLAUDE_DIR="${CLAUDE_HOME_DIR:-${CLAUDE_CONFIG_DIR:-${HOME}/.claude}}"
+SKILL_DIR="${CLAUDE_DIR}/skills/mcp-hub"
 HUB_HOME="${MCP_HUB_HOME:-${HOME}/.mcp-hub}"
 LOG_DIR="${HUB_HOME}/logs"
 PID_FILE="${HUB_HOME}/daemon.pid"
@@ -129,7 +132,7 @@ fetch_artifact() {
   fi
   mkdir -p "$TMP/x"
   tar -xzf "$TMP/${ASSET}" -C "$TMP/x"
-  [[ -f "$TMP/x/mcp-hub" && -f "$TMP/x/skill/mcp-hub/SKILL.md" ]] || die "archive is missing mcp-hub or skill/mcp-hub/SKILL.md"
+  [[ -f "$TMP/x/mcp-hub" ]] || die "archive is missing the mcp-hub binary"
 }
 
 install_binary() {
@@ -147,13 +150,9 @@ install_binary() {
 }
 
 install_skill() {
-  step "[3/6] Install Claude Code skill to ${SKILL_DIR}"
-  mkdir -p "$(dirname "$SKILL_DIR")"
-  rm -rf "${SKILL_DIR}.new"
-  cp -R "$TMP/x/skill/mcp-hub" "${SKILL_DIR}.new"
-  rm -rf "$SKILL_DIR"
-  mv "${SKILL_DIR}.new" "$SKILL_DIR"
-  log "skill installed (Claude Code loads it on next start)"
+  step "[3/6] Install Claude Code skill"
+  # The skill ships inside the binary, so the installed skill always matches it.
+  CLAUDE_HOME_DIR="$CLAUDE_DIR" "$BIN" install-skill || die "could not install the Claude Code skill"
 }
 
 confirm() {
@@ -221,9 +220,9 @@ start_daemon() {
   stop_daemon
   if use_launchd; then
     mkdir -p "$(dirname "$PLIST")"
-    local extra_env=""
+    local extra_env="<key>CLAUDE_HOME_DIR</key><string>$(xml_escape "$CLAUDE_DIR")</string>"
     if [[ -n "${CLAUDE_CONFIG_PATH:-}" ]]; then
-      extra_env="<key>CLAUDE_CONFIG_PATH</key><string>$(xml_escape "$CLAUDE_CONFIG_PATH")</string>"
+      extra_env+="<key>CLAUDE_CONFIG_PATH</key><string>$(xml_escape "$CLAUDE_CONFIG_PATH")</string>"
     fi
     cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -259,7 +258,7 @@ EOF
   else
     # A plist left by an earlier launchd install would start a second daemon at next login.
     if [[ -f "$PLIST" ]]; then rm -f "$PLIST"; log "removed old ${PLIST} (--no-launchd)"; fi
-    MCP_HUB_HOME="$HUB_HOME" MCP_HUB_ADDR="$ADDR" nohup "$BIN" serve >>"$LOG_DIR/daemon.log" 2>&1 &
+    CLAUDE_HOME_DIR="$CLAUDE_DIR" MCP_HUB_HOME="$HUB_HOME" MCP_HUB_ADDR="$ADDR" nohup "$BIN" serve >>"$LOG_DIR/daemon.log" 2>&1 &
     echo $! > "$PID_FILE"
     log "daemon started in the background (pid $!, --no-launchd)"
   fi
