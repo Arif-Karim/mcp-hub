@@ -132,3 +132,38 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
 - A tampered `checksums.txt` was checked by hand: the installer aborts at the verify step and `~/.local/bin` is never created.
 - `uninstall-config` exits 0 when it keeps user-edited `hub__*` entries (`PartialRemoveError`). Leaving them in place is the
   safe outcome, and failing would block `install.sh --uninstall` from removing everything else.
+
+### Lane F1 (hub service: runner, enable/disable orchestration, API, daemon wiring, e2e)
+- Builder subagent, branch `lane-f1-hub-service`. Runner went red → green first (TestMain re-exec: the test binary is its
+  own fake server — healthy, never-healthy, crash-after, ignores SIGTERM — so no network or example module needed).
+- **Mid-lane re-prioritisation from the human:** "they can't test anything end to end yet" → ship the thinnest complete
+  vertical slice first. Hub service, routes, daemon wiring and `scripts/dev-registry.sh` landed as one commit,
+  smoke-tested by hand (DeepWiki through the proxy; local service-directory `find_service` through the proxy with the
+  injected JWT verified by the server) and pushed as a draft PR with try-it steps before the unit tests. Tests followed in
+  the same PR; the TDD pairing is therefore weaker for `internal/hub` than for the runner (called out honestly here).
+- Writing the hub tests afterwards still found a real bug, fixed red → green: a failed re-enable (config conflict) of an
+  already-running server marked it `error` and the proxy stopped routing to it.
+- `serve` construction moved into `internal/daemon` so the e2e test and the binary build the exact same graph.
+- The e2e initially failed because redirecting `HOME` before `go build` moved the Go module cache into `t.TempDir()`
+  (read-only module files broke cleanup) → build first, then redirect `HOME`.
+- Dev-catalogue: catalogue validation rejects `file://` artifact URLs (only https or loopback http) — kept that rule and
+  serve the dev artifact from a loopback `python3 -m http.server` instead of widening the registry.
+- `verify.sh --mutation` (gremlins, timeout coefficient 20): cmd/mcp-hub 18/0, daemon 9/0, hub 35/0, server 25/0 (all
+  100%); runner 21 killed / 5 lived / 2 timed out → 80.8%. Runner survivors are timing boundaries (log-tail size cut,
+  default-timeout `> 0` checks, poll interval) that change no observable outcome within the test timeouts. Total
+  coverage 92.8%. The e2e test (real example server + MCP SDK client) passed 3× under `-race` and now runs in `verify.sh` (lane E
+  merged); it skips only with `-short` or if `examples/` is absent.
+- **Review round (PR #15).** Must-fix 1: the runner's "never-healthy" fake used `select {}`, which Go's deadlock detector
+  kills immediately — so the health-timeout, ctx-cancel and kill-a-live-unhealthy-child paths had never run against a live
+  child. Fixed (fake sleeps; tests now assert the child pid is gone). Must-fix 2: Stop could orphan grandchildren; the
+  reaper now SIGKILLs the whole group whenever the leader exits — proven with a SIGTERM-ignoring grandchild fake. That red
+  run itself left SIGTERM-ignoring orphans on the dev machine (needed `pkill -9`), which is exactly the bug. Should-fix:
+  per-id runner locks (a slow health check no longer blocks other ids), hub `Close` + runner `StopAll` drain in-flight
+  starts before killing processes, Restore in the background after the listener serves, openapi 409 on disable,
+  crash test driven by `/crash` + `Proc.Done()` instead of a 300ms timer, dev archive built with the example's `mktar`
+  (macOS `tar` had added an AppleDouble `._mcp-server`). Each as a red → green pair.
+- Lesson: a fake that exits for an unrelated reason makes a timeout test pass for the wrong reason — assert the
+  intermediate state (child alive before, gone after), not only the final error.
+- After the review round (rebased on #13/#14/#16): `verify.sh --mutation` passes. cmd/mcp-hub 18/0, daemon 9/1 (90%;
+  the survivor is the drain-timeout warning log), hub 39/0, runner 25 killed / 4 lived / 3 timed out (86.2%, up from
+  80.8%), server 25/0. Coverage 92.8%; e2e runs inside verify.

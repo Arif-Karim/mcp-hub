@@ -75,3 +75,62 @@ _To be completed during the build._
 - **Known gap.** There is no lock shared with Claude Code itself (its own locking, if any, is not a published contract), so a write landing
   between our re-check and `rename` can still be lost. The window is microseconds and mitigated by the re-check plus
   the backups; it cannot be closed from outside Claude Code.
+
+## Enable flow (lane F1: `internal/hub`, `internal/runner`, `internal/daemon`)
+
+```
+UI / CLI / skill            daemon (127.0.0.1:7420)                                    disk / processes
+POST /servers/{id}/enable ─▶ hub.Service.Enable (per-id mutex)
+                             ├─ catalogue.Get(id)            ── 404 not_found
+                             ├─ catalogue.CanEnable          ── 403 not_approved (nothing installed or written)
+                             ├─ local only:
+                             │   ├─ registry.Select(platform) ── 422 unsupported_platform
+                             │   ├─ Installer.Install          ── download → sha256 → unpack ~/.mcp-hub/servers/<id>/<ver>
+                             │   │                                (422 checksum_mismatch / artifact_rejected, 502 registry_unavailable)
+                             │   └─ runner.Start               ── free loopback port, env {PORT, HUB_JWKS_URL, HUB_AUDIENCE=id,
+                             │                                    HUB_ISSUER}, own pgid, ~/.mcp-hub/logs/<id>.log, wait GET /healthz
+                             │                                    (502 start_failed + log tail; process killed)
+                             ├─ claudeconfig.Add(hub__<id> → http://127.0.0.1:7420/mcp/<id>)
+                             │                                 ── 409 config_conflict / 422 config_invalid
+                             │                                    → a process started by THIS call is stopped (rollback)
+                             └─ record enabled → Resolve(id) now answers the proxy
+Claude Code ── /mcp/<id> ──▶ proxy: Resolve → strip client creds → inject hub JWT (aud=id) → upstream → audit event
+```
+
+- **Disable** removes the config entry first; if that conflicts (user edited `hub__<id>`) the server keeps running, so
+  Claude Code is never left pointing at a dead proxy route the hub can't clean up. Then the process gets SIGTERM to its
+  process group, SIGKILL after 5s.
+- **Restart (Restore).** For every ledger-owned id: delisted, revoked or no-longer-approved entries are **auto-disabled**
+  (config entry removed, WARN log, state `lastError: "disabled: revoked by platform team"` shown in the UI) — revocation
+  in the central catalogue reaches every laptop on its next daemon start without trusting the developer to act.
+  Approved local servers are restarted from the cached install (re-downloaded if missing), approved remotes are ready.
+  A server that fails to come back is `status: error` with the reason and does not resolve. Restore runs in the
+  background after the listener is serving (the UI answers at once; restoring servers show `stopped` and do not resolve),
+  each server time-boxed to 2 minutes.
+- **State.** `running` / `stopped` (clean exit) / `error` (crash, with the exit reason) for local servers, `ready` for
+  remotes, `disabled` otherwise. Only enabled + running/ready entries resolve in the proxy. A failed re-enable of an
+  already healthy server leaves it serving.
+- **Process hygiene.** The child environment is minimal (`PATH`, `HOME`, the hub variables, `PORT`) — the daemon's own
+  environment, which may hold credentials, is not inherited. Logs are 0600 in a 0700 dir. Whenever the leader exits
+  (Stop, crash, failed start) the whole process group is SIGKILLed, so a grandchild that ignores SIGTERM cannot be
+  orphaned holding the port.
+- **Shutdown order.** SIGINT/SIGTERM → HTTP shutdown → hub `Close` (new enables refused with `start_failed` "daemon
+  shutting down", in-flight enables/restores drained, bounded 15s) → runner `StopAll` (aborts any start still waiting for
+  health, kills it, then stops every server) → audit log closed. No server process outlives the daemon. The port is bound
+  before anything else, so a second daemon exits with "address in use" without starting duplicate processes.
+- **Known gaps.** The free port is picked then released before the server binds (a race another process could win; the
+  health check then fails cleanly). No automatic restart of a crashed server — the UI shows `error`, Enable restarts it.
+  A second daemon on a *different* port but the same `MCP_HUB_HOME` would start duplicate processes (config writes are
+  flock-safe; processes are not). Group SIGKILL after the leader is reaped uses its pid as the group id; pid reuse as a
+  new group leader in that instant is theoretically possible.
+
+## Identity tokens
+
+The hub token is an identity assertion, not just a "came through the hub" stamp: `sub` is the developer, `aud` the
+server. That lets each MCP server call its own backend APIs on the user's behalf and make its own access decisions
+(e.g. "is `sub` in the on-call group for this service?"); the example server logs `sub` per tool call. In production the
+hub's local issuer is replaced by the bank's IdP (token exchange of the developer's SSO session for a per-server
+audience token) and every server, local or remote, verifies against the IdP's JWKS — exactly the code path the example
+server uses today against `HUB_JWKS_URL`. There is no central token database to protect or revoke from.
+Responsibilities split cleanly: **revoking a server** is a catalogue concern (approval → `revoked`, auto-disabled on
+restart, refused on enable); **revoking a user's access** is the IdP's and each server's concern.

@@ -11,8 +11,10 @@ import (
 	"testing"
 
 	"github.com/Arif-Karim/mcp-hub/internal/catalogue"
+	"github.com/Arif-Karim/mcp-hub/internal/claudeconfig"
 	"github.com/Arif-Karim/mcp-hub/internal/httpx"
 	"github.com/Arif-Karim/mcp-hub/internal/registry"
+	"github.com/Arif-Karim/mcp-hub/internal/runner"
 	"github.com/Arif-Karim/mcp-hub/internal/server"
 )
 
@@ -177,6 +179,11 @@ func TestErrorStatusMapsSentinelsToContractCodes(t *testing.T) {
 		{fmt.Errorf("x: %w", registry.ErrUnsafeArchive), http.StatusUnprocessableEntity, httpx.CodeArtifactRejected},
 		{registry.ErrUnsupportedPlatform, http.StatusUnprocessableEntity, httpx.CodeUnsupportedPlatform},
 		{registry.ErrRegistryUnavailable, http.StatusBadGateway, httpx.CodeRegistryUnavailable},
+		{fmt.Errorf("x: %w", runner.ErrStartFailed), http.StatusBadGateway, httpx.CodeStartFailed},
+		{fmt.Errorf("x: %w", claudeconfig.ErrConfigConflict), http.StatusConflict, httpx.CodeConfigConflict},
+		{&claudeconfig.PartialRemoveError{Skipped: []string{"hub__x"}}, http.StatusConflict, httpx.CodeConfigConflict},
+		{claudeconfig.ErrConfigInvalid, http.StatusUnprocessableEntity, httpx.CodeConfigInvalid},
+		{claudeconfig.ErrInvalidID, http.StatusBadRequest, httpx.CodeBadRequest},
 		{errors.New("boom"), http.StatusInternalServerError, httpx.CodeInternal},
 	}
 	for _, tc := range cases {

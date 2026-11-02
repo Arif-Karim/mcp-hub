@@ -19,16 +19,7 @@ func registerCatalogue(mux *http.ServeMux, store *catalogue.Store, state func(st
 	if state == nil {
 		state = disabledState
 	}
-	item := func(e catalogue.Entry) catalogueItem {
-		// tags and tools are required arrays in the contract: never emit null.
-		if e.Tags == nil {
-			e.Tags = []string{}
-		}
-		if e.Tools == nil {
-			e.Tools = []catalogue.Tool{}
-		}
-		return catalogueItem{Entry: e, State: state(e.ID)}
-	}
+	item := func(e catalogue.Entry) catalogueItem { return newItem(e, state(e.ID)) }
 
 	mux.HandleFunc("GET /api/v1/catalogue", func(w http.ResponseWriter, r *http.Request) {
 		kind := catalogue.Kind(r.URL.Query().Get("kind"))
@@ -57,6 +48,17 @@ func registerCatalogue(mux *http.ServeMux, store *catalogue.Store, state func(st
 	// See the health route in New: without these the /api/ catch-all answers 404.
 	mux.HandleFunc("/api/v1/catalogue", methodNotAllowed)
 	mux.HandleFunc("/api/v1/catalogue/{id}", methodNotAllowed)
+}
+
+func newItem(e catalogue.Entry, state catalogue.InstallState) catalogueItem {
+	// tags and tools are required arrays in the contract: never emit null.
+	if e.Tags == nil {
+		e.Tags = []string{}
+	}
+	if e.Tools == nil {
+		e.Tools = []catalogue.Tool{}
+	}
+	return catalogueItem{Entry: e, State: state}
 }
 
 func disabledState(id string) catalogue.InstallState {
