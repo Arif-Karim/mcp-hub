@@ -59,6 +59,10 @@ func (f *fakeDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/catalogue":
+		if r.URL.Query().Get("q") == "explode" {
+			writeErr(w, http.StatusInternalServerError, "internal", "catalogue unavailable")
+			return
+		}
 		if r.URL.Query().Get("q") == "nothing" {
 			ok(`{"items":[]}`)
 			return
@@ -414,5 +418,29 @@ func TestDefaultEnv(t *testing.T) {
 	}
 	if _, err := cfg.Owned(); err != nil {
 		t.Fatalf("Owned on empty temp home: %v", err)
+	}
+}
+
+func TestReadCommandsJSONErrors(t *testing.T) {
+	_, env := startFake(t)
+	cases := []struct {
+		args []string
+		code string
+	}{
+		{[]string{"info", "missing-one", "--json"}, "not_found"},
+		{[]string{"search", "explode", "--json"}, "internal"},
+	}
+	for _, c := range cases {
+		r := runWith(t, env, c.args...)
+		if r.code != 1 {
+			t.Errorf("%v: exit %d, want 1", c.args, r.code)
+		}
+		var e struct {
+			Error struct{ Code string } `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(r.stdout), &e); err != nil || e.Error.Code != c.code {
+			t.Errorf("%v: stdout should carry the raw error JSON: %q (%v)", c.args, r.stdout, err)
+		}
+		mustContain(t, r.stderr, "("+c.code+")")
 	}
 }
