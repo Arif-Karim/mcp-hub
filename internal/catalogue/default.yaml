@@ -32,8 +32,10 @@ entries:
         sha256: "288664f54a86cf3d6872d91e2624f7ce23a4118e0271bd666e2298d03b2194d1"
 
   - id: deepwiki
-    name: DeepWiki
-    description: Ask questions about public GitHub repositories' documentation. Public, no credentials.
+    name: Engineering Docs Q&A (DeepWiki)
+    description: >-
+      Ask questions about repositories' documentation. In production this would be a company-hosted
+      DeepWiki over internal repos; this demo points at the public instance (no credentials sent).
     owner: external (Cognition)
     version: "1"
     kind: remote
