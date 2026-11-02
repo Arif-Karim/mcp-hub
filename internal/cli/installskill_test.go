@@ -22,9 +22,11 @@ func TestInstallSkillWritesSkillOffline(t *testing.T) {
 	if r.code != ExitOK {
 		t.Fatalf("exit %d: %s", r.code, r.stderr)
 	}
-	path := skillfiles.Path(dir)
-	mustContain(t, r.stdout, "Installed the mcp-hub Claude Code skill to "+path+".",
-		"Restart Claude Code or run /reload-plugins to load it.")
+	mustContain(t, r.stdout, "Installed 3 mcp-hub Claude Code skills to "+skillfiles.SkillsDir(dir)+":",
+		"Restart Claude Code or run /reload-plugins to load them.")
+	for _, s := range skillfiles.Skills() {
+		mustContain(t, r.stdout, "  "+s.Name+"  "+skillfiles.SkillPath(dir, s.Name)+"\n")
+	}
 	if installed, upToDate := skillfiles.Status(dir); !installed || !upToDate {
 		t.Fatalf("Status = %v,%v after install-skill", installed, upToDate)
 	}
