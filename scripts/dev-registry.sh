@@ -32,9 +32,11 @@ sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum 
 
 platform="$(go env GOOS)-$(go env GOARCH)"
 echo "building service-directory for $platform" >&2
-(cd "$src" && CGO_ENABLED=0 go build -trimpath -o "$OLDPWD/$out/build/mcp-server" ./cmd/mcp-server)
-chmod 0755 "$out/build/mcp-server"
-tar -czf "$out/service-directory.tar.gz" -C "$out/build" mcp-server
+root="$PWD"
+# Package with the example's own archiver (same as the release pipeline): one
+# `mcp-server` entry only — macOS tar would add AppleDouble `._mcp-server` files.
+(cd "$src" && CGO_ENABLED=0 go build -trimpath -o "$root/$out/build/mcp-server" ./cmd/mcp-server \
+  && go run ./scripts/mktar "$root/$out/build/mcp-server" "$root/$out/service-directory.tar.gz")
 rm -rf "$out/build"
 sum="$(sha256 "$out/service-directory.tar.gz")"
 
