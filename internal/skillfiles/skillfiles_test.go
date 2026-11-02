@@ -44,6 +44,23 @@ func TestDefaultClaudeDir(t *testing.T) {
 	if d, err := skillfiles.DefaultClaudeDir(); err != nil || d != "/override/.claude" {
 		t.Fatalf("DefaultClaudeDir = %q, %v; want the override", d, err)
 	}
+	t.Setenv("CLAUDE_CONFIG_DIR", "/profile/.claude-work")
+	if d, err := skillfiles.DefaultClaudeDir(); err != nil || d != "/override/.claude" {
+		t.Fatalf("CLAUDE_HOME_DIR must win over CLAUDE_CONFIG_DIR, got %q, %v", d, err)
+	}
+	t.Setenv("CLAUDE_HOME_DIR", "")
+	if d, err := skillfiles.DefaultClaudeDir(); err != nil || d != "/profile/.claude-work" {
+		t.Fatalf("DefaultClaudeDir = %q, %v; want Claude Code's CLAUDE_CONFIG_DIR", d, err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", "relative/.claude")
+	if _, err := skillfiles.DefaultClaudeDir(); err == nil {
+		t.Fatal("relative CLAUDE_CONFIG_DIR accepted")
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CLAUDE_HOME_DIR", "rel")
+	if _, err := skillfiles.DefaultClaudeDir(); err == nil {
+		t.Fatal("relative CLAUDE_HOME_DIR accepted")
+	}
 	home := t.TempDir()
 	t.Setenv("CLAUDE_HOME_DIR", "")
 	t.Setenv("HOME", home)
@@ -105,6 +122,30 @@ func TestStatusAndUpdate(t *testing.T) {
 	}
 	if i, u := skillfiles.Status(dir); !i || !u {
 		t.Fatalf("after update: Status = %v,%v; want true,true", i, u)
+	}
+}
+
+func TestInstallReplacesSymlinkWithoutWritingThroughIt(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "elsewhere.md")
+	if err := os.WriteFile(outside, []byte("keep me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(skillfiles.Path(dir)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, skillfiles.Path(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := skillfiles.Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(outside); string(got) != "keep me" {
+		t.Fatalf("symlink target was overwritten: %q", got)
+	}
+	fi, err := os.Lstat(skillfiles.Path(dir))
+	if err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("Path is not a regular file after install: %v %v", fi, err)
 	}
 }
 

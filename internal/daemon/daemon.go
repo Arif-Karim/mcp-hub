@@ -41,6 +41,8 @@ type Config struct {
 	Logger           *slog.Logger
 	// RegistryClient downloads artifacts; nil uses the registry default.
 	RegistryClient *http.Client
+	// ClaudeDir is the Claude Code directory the embedded skill installs into; empty disables it.
+	ClaudeDir string
 }
 
 // Daemon is a constructed, not yet serving, hub.

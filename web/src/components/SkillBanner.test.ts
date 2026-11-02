@@ -10,7 +10,7 @@ const path = '/Users/dev/.claude/skills/mcp-hub/SKILL.md'
 const skill = (installed: boolean, upToDate: boolean): SkillStatus => ({ installed, upToDate, path })
 
 function setup(s: SkillStatus | undefined, client: ApiClient = createMockClient({ latencyMs: 0 })) {
-  return mount(SkillBanner, { props: { skill: s, client } })
+  return mount(SkillBanner, { props: { skill: s, client }, attachTo: document.body })
 }
 
 describe('SkillBanner', () => {
@@ -33,6 +33,14 @@ describe('SkillBanner', () => {
     expect(w.get('[data-test=skill-banner]').text()).toContain('Installed — restart Claude Code or run /reload-plugins')
     expect(w.find('[data-test=skill-install]').exists()).toBe(false)
     expect(w.emitted('installed')).toHaveLength(1)
+    expect(document.activeElement).toBe(w.get('[data-test=skill-dismiss]').element)
+  })
+
+  it('announces through a live region that exists before the message changes', () => {
+    const w = setup(skill(false, false))
+    const live = w.get('[role=status]')
+    expect(live.attributes('aria-live')).toBe('polite')
+    expect(w.get('[data-test=skill-dismiss]').attributes('aria-label')).toBe('Dismiss Claude Code skill notice')
   })
 
   it('installed but outdated: offers Update skill', () => {

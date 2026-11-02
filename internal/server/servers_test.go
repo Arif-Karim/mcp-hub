@@ -16,6 +16,7 @@ import (
 	"github.com/Arif-Karim/mcp-hub/internal/registry"
 	"github.com/Arif-Karim/mcp-hub/internal/runner"
 	"github.com/Arif-Karim/mcp-hub/internal/server"
+	"github.com/Arif-Karim/mcp-hub/internal/skillfiles"
 )
 
 type fakeEnabler struct {
@@ -160,5 +161,15 @@ func TestStatusRoute(t *testing.T) {
 	rec, _ = do(t, h, http.MethodPost, "/api/v1/status")
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status = %d", rec.Code)
+	}
+}
+
+func TestStatusIncludesSkill(t *testing.T) {
+	sk := &fakeSkill{state: skillfiles.State{Installed: true, UpToDate: false, Path: "/home/dev/.claude/skills/mcp-hub/SKILL.md"}}
+	h := server.New(server.Options{Status: func() server.Status { return server.Status{Version: "1"} }, Skill: sk})
+	rec, body := do(t, h, http.MethodGet, "/api/v1/status")
+	want := map[string]any{"installed": true, "upToDate": false, "path": "/home/dev/.claude/skills/mcp-hub/SKILL.md"}
+	if rec.Code != http.StatusOK || !reflect.DeepEqual(body["skill"], want) {
+		t.Fatalf("status = %d skill=%v, want %v", rec.Code, body["skill"], want)
 	}
 }
