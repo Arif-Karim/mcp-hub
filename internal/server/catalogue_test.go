@@ -36,7 +36,7 @@ func testCatalogue() *catalogue.Store {
 func do(t *testing.T, h http.Handler, method, target string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(method, target, nil))
+	h.ServeHTTP(rec, localReq(method, target, nil))
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
 		t.Fatalf("%s %s content-type = %q", method, target, ct)
 	}
@@ -85,7 +85,7 @@ func TestListCatalogue(t *testing.T) {
 	}
 	// Empty result is [] not null, per the contract (items is required).
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/catalogue?q=nomatch", nil))
+	h.ServeHTTP(rec, localReq(http.MethodGet, "/api/v1/catalogue?q=nomatch", nil))
 	if got := strings.TrimSpace(rec.Body.String()); got != `{"items":[]}` {
 		t.Fatalf("empty body = %s", got)
 	}

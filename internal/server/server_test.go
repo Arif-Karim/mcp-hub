@@ -13,7 +13,7 @@ func TestHealthReturnsOKAndVersion(t *testing.T) {
 	h := server.New(server.Options{Version: "1.2.3"})
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
+	h.ServeHTTP(rec, localReq(http.MethodGet, "/api/v1/health", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -37,7 +37,7 @@ func TestHealthRejectsNonGET(t *testing.T) {
 	h := server.New(server.Options{Version: "x"})
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/health", nil))
+	h.ServeHTTP(rec, localReq(http.MethodPost, "/api/v1/health", nil))
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", rec.Code)
@@ -48,7 +48,7 @@ func TestUnknownAPIRouteReturnsJSON404(t *testing.T) {
 	h := server.New(server.Options{Version: "x"})
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/nope", nil))
+	h.ServeHTTP(rec, localReq(http.MethodGet, "/api/v1/nope", nil))
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
