@@ -153,3 +153,14 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   default-timeout `> 0` checks, poll interval) that change no observable outcome within the test timeouts. Total
   coverage 92.8%. The e2e test (real example server + MCP SDK client) passed 3× under `-race` and now runs in `verify.sh` (lane E
   merged); it skips only with `-short` or if `examples/` is absent.
+- **Review round (PR #15).** Must-fix 1: the runner's "never-healthy" fake used `select {}`, which Go's deadlock detector
+  kills immediately — so the health-timeout, ctx-cancel and kill-a-live-unhealthy-child paths had never run against a live
+  child. Fixed (fake sleeps; tests now assert the child pid is gone). Must-fix 2: Stop could orphan grandchildren; the
+  reaper now SIGKILLs the whole group whenever the leader exits — proven with a SIGTERM-ignoring grandchild fake. That red
+  run itself left SIGTERM-ignoring orphans on the dev machine (needed `pkill -9`), which is exactly the bug. Should-fix:
+  per-id runner locks (a slow health check no longer blocks other ids), hub `Close` + runner `StopAll` drain in-flight
+  starts before killing processes, Restore in the background after the listener serves, openapi 409 on disable,
+  crash test driven by `/crash` + `Proc.Done()` instead of a 300ms timer, dev archive built with the example's `mktar`
+  (macOS `tar` had added an AppleDouble `._mcp-server`). Each as a red → green pair.
+- Lesson: a fake that exits for an unrelated reason makes a timeout test pass for the wrong reason — assert the
+  intermediate state (child alive before, gone after), not only the final error.

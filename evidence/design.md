@@ -104,15 +104,25 @@ Claude Code ── /mcp/<id> ──▶ proxy: Resolve → strip client creds →
   (config entry removed, WARN log, state `lastError: "disabled: revoked by platform team"` shown in the UI) — revocation
   in the central catalogue reaches every laptop on its next daemon start without trusting the developer to act.
   Approved local servers are restarted from the cached install (re-downloaded if missing), approved remotes are ready.
-  A server that fails to come back is `status: error` with the reason and does not resolve.
+  A server that fails to come back is `status: error` with the reason and does not resolve. Restore runs in the
+  background after the listener is serving (the UI answers at once; restoring servers show `stopped` and do not resolve),
+  each server time-boxed to 2 minutes.
 - **State.** `running` / `stopped` (clean exit) / `error` (crash, with the exit reason) for local servers, `ready` for
   remotes, `disabled` otherwise. Only enabled + running/ready entries resolve in the proxy. A failed re-enable of an
   already healthy server leaves it serving.
 - **Process hygiene.** The child environment is minimal (`PATH`, `HOME`, the hub variables, `PORT`) — the daemon's own
-  environment, which may hold credentials, is not inherited. Logs are 0600 in a 0700 dir.
+  environment, which may hold credentials, is not inherited. Logs are 0600 in a 0700 dir. Whenever the leader exits
+  (Stop, crash, failed start) the whole process group is SIGKILLed, so a grandchild that ignores SIGTERM cannot be
+  orphaned holding the port.
+- **Shutdown order.** SIGINT/SIGTERM → HTTP shutdown → hub `Close` (new enables refused with `start_failed` "daemon
+  shutting down", in-flight enables/restores drained, bounded 15s) → runner `StopAll` (aborts any start still waiting for
+  health, kills it, then stops every server) → audit log closed. No server process outlives the daemon. The port is bound
+  before anything else, so a second daemon exits with "address in use" without starting duplicate processes.
 - **Known gaps.** The free port is picked then released before the server binds (a race another process could win; the
   health check then fails cleanly). No automatic restart of a crashed server — the UI shows `error`, Enable restarts it.
-  A second daemon on the same `MCP_HUB_HOME` would start duplicate processes (config writes are flock-safe; processes are not).
+  A second daemon on a *different* port but the same `MCP_HUB_HOME` would start duplicate processes (config writes are
+  flock-safe; processes are not). Group SIGKILL after the leader is reaped uses its pid as the group id; pid reuse as a
+  new group leader in that instant is theoretically possible.
 
 ## Identity tokens
 
