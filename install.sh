@@ -235,7 +235,6 @@ start_daemon() {
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Background</string>
   <key>StandardOutPath</key><string>$(xml_escape "$LOG_DIR/daemon.log")</string>
   <key>StandardErrorPath</key><string>$(xml_escape "$LOG_DIR/daemon.log")</string>
 </dict>
@@ -243,6 +242,8 @@ start_daemon() {
 EOF
     chmod 644 "$PLIST"
     launchctl bootstrap "gui/$(id -u)" "$PLIST" || die "launchctl bootstrap failed; see ${LOG_DIR}/daemon.log"
+    # launchd may defer a RunAtLoad spawn; start it now.
+    launchctl kickstart "gui/$(id -u)/${LABEL}" || warn "launchctl kickstart failed; the daemon will start at next login"
     log "LaunchAgent ${LABEL} loaded (starts at login, restarts if it exits)"
   else
     MCP_HUB_HOME="$HUB_HOME" MCP_HUB_ADDR="$ADDR" nohup "$BIN" serve >>"$LOG_DIR/daemon.log" 2>&1 &
