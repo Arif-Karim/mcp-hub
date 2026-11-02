@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Arif-Karim/mcp-hub/internal/claudeconfig"
+	"github.com/Arif-Karim/mcp-hub/internal/skillfiles"
 )
 
 // item mirrors the contract's CatalogueItem (only what the CLI prints).
@@ -203,7 +204,7 @@ func enable(ctx context.Context, env Env, o opts) error {
 	if it.State.ProxyURL != "" {
 		fmt.Fprintf(env.Stdout, "Proxy URL: %s\n", it.State.ProxyURL)
 	}
-	fmt.Fprintln(env.Stdout, "Restart Claude Code or run /mcp to load it.")
+	fmt.Fprintln(env.Stdout, "Run /reload-plugins in Claude Code (or restart it) to load the new server.")
 	return nil
 }
 
@@ -213,7 +214,7 @@ func disable(ctx context.Context, env Env, o opts) error {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "Disabled %s: removed %s from your Claude Code config.\n", it.Name, it.State.ConfigName)
-	fmt.Fprintln(env.Stdout, "Restart Claude Code or run /mcp to unload it.")
+	fmt.Fprintln(env.Stdout, "Run /reload-plugins in Claude Code (or restart it) to unload the server.")
 	return nil
 }
 
@@ -316,5 +317,20 @@ func uninstallConfig(_ context.Context, env Env, _ opts) error {
 	for _, name := range skipped {
 		fmt.Fprintf(env.Stderr, "Kept %s: it was modified outside mcp-hub, so it was left in place. Remove it yourself if you no longer need it.\n", name)
 	}
+	return nil
+}
+
+// installSkill writes the skill embedded in this binary; it needs no daemon,
+// so install.sh can run it before the daemon starts.
+func installSkill(_ context.Context, env Env, _ opts) error {
+	dir, err := env.ClaudeDir()
+	if err != nil {
+		return fmt.Errorf("locating Claude Code directory: %w", err)
+	}
+	if err := skillfiles.Install(dir); err != nil {
+		return fmt.Errorf("installing skill: %w", err)
+	}
+	fmt.Fprintf(env.Stdout, "Installed the mcp-hub Claude Code skill to %s.\n", skillfiles.Path(dir))
+	fmt.Fprintln(env.Stdout, "Restart Claude Code or run /reload-plugins to load it.")
 	return nil
 }

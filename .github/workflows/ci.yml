@@ -86,6 +86,8 @@ jobs:
           ./install.sh --local-artifact dist --no-launchd --no-open --skip-claude
           test -x "$HOME/.local/bin/mcp-hub"
           test -f "$HOME/.claude/skills/mcp-hub/SKILL.md"
+          if tar -tzf dist/mcp-hub_darwin_arm64.tar.gz | grep -q skill/; then echo 'skill should ship inside the binary only'; exit 1; fi
+          head -n 2 "$HOME/.claude/skills/mcp-hub/SKILL.md" | grep -q '^name: mcp-hub$'
           curl -fsS http://127.0.0.1:7420/api/v1/health | grep -q '"status":"ok"'
           "$HOME/.local/bin/mcp-hub" search --json | grep -q '"items"'
           ./install.sh --uninstall

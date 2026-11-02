@@ -30,7 +30,8 @@ Point out `confidential` classification so the user knows what data it can retur
 1. **Ask the user to confirm** the exact server (name + id) before enabling. Never enable without a yes.
 2. Run `mcp-hub enable <id> --json`. Claude Code will also show its own permission prompt for this command
    (the skill pre-approves only the read-only commands); that is expected.
-3. On success tell them it was added as `hub__<id>` and that they must **run `/mcp` or restart Claude Code** to load it.
+3. On success tell them it was added as `hub__<id>`, then: **Run `/reload-plugins` in Claude Code (or restart it) to load
+   the new server.**
 
 ## What do I have enabled?
 
@@ -38,7 +39,8 @@ Run `mcp-hub status` and report the enabled servers (or `mcp-hub search --json` 
 
 ## Disable
 
-Confirm first, then `mcp-hub disable <id> --json`, then tell them to run `/mcp` or restart Claude Code.
+Confirm first, then `mcp-hub disable <id> --json`, then tell them: Run `/reload-plugins` in Claude Code (or restart it)
+to unload the server.
 
 ## Errors (exit code non-zero; `--json` prints `{"error":{"code","message"}}`)
 

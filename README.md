@@ -17,7 +17,8 @@ What it does (each step is logged; no sudo):
 1. Downloads `mcp-hub_darwin_<arch>.tar.gz` for the latest `v*` release and **verifies its sha256** against
    `checksums.txt`. If it does not match, it stops and installs nothing.
 2. Installs the binary to `~/.local/bin/mcp-hub`. If that folder is not on your `PATH`, it prints the line to add.
-3. Installs the Claude Code skill to `~/.claude/skills/mcp-hub/`.
+3. Installs the Claude Code skill (embedded in the binary) to `~/.claude/skills/mcp-hub/` via `mcp-hub install-skill`.
+   If the UI shows "Claude Code skill not installed", click **Install skill** there, or run `mcp-hub install-skill`.
 4. If Claude Code is missing, it offers to install it with the official installer. You log in with your own account.
 5. Starts the daemon as a per-user LaunchAgent (`com.mcp-hub.daemon`, on `127.0.0.1:7420` only). It starts at login
    and restarts if it exits. Logs go to `~/.mcp-hub/logs/daemon.log`.

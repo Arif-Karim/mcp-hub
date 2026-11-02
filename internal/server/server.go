@@ -53,6 +53,9 @@ func New(opts Options) http.Handler {
 		registerStatus(mux, opts.Status)
 	}
 	registerLaneC(mux, opts)
+	if opts.Skill != nil {
+		registerSkill(mux, opts.Skill)
+	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "no such API route")
 	})

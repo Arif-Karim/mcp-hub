@@ -27,7 +27,7 @@ record it in the ledger `~/.mcp-hub/state.json`. Claude Code config never contai
 | `internal/claudeconfig` | D | atomic, marker-scoped edits of `~/.claude.json` + ledger |
 | `web/` | A | Vue 3 + Vite + TS UI |
 | `examples/mcp-server-template` | E | reference MCP server (own go.mod) |
-| `skill/` | F | Claude Code skill shipped by `install.sh` |
+| `internal/skillfiles` | F/G | Claude Code skill (`mcp-hub/SKILL.md`, embedded) + `install-skill` writer |
 | `evidence/` | everyone | evidence pack — append notes relevant to your lane |
 
 ## Commands

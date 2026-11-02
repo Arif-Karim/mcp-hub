@@ -1,7 +1,7 @@
 name: release
 
 # Builds and publishes mcp-hub release archives that install.sh downloads:
-#   mcp-hub_<os>_<arch>.tar.gz (binary + skill/mcp-hub/SKILL.md) and checksums.txt.
+#   mcp-hub_<os>_<arch>.tar.gz (binary with the UI and Claude Code skill embedded) and checksums.txt.
 #
 # Two jobs so repo code never runs with a write token:
 #   build   (contents: read)  guard, test, scripts/package-release.sh -> upload dist/
