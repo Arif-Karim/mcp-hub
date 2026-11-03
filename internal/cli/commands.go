@@ -214,7 +214,7 @@ func disable(ctx context.Context, env Env, o opts) error {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "Disabled %s: removed %s from your Claude Code config.\n", it.Name, it.State.ConfigName)
-	fmt.Fprintln(env.Stdout, "Run /reload-plugins in Claude Code (or restart it) to unload the server.")
+	fmt.Fprintln(env.Stdout, "Restart Claude Code to remove it (/reload-plugins adds servers but does not remove them).")
 	return nil
 }
 

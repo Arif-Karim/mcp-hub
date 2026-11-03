@@ -47,7 +47,7 @@ How a developer (and the platform team supporting them) runs, debugs, rolls back
 | `enable` → `config_conflict` | the user already has their own `hub__<id>` entry, or edited ours | mcp-hub will not overwrite it. Remove or rename the entry, then retry |
 | `enable` → `config_invalid` | `~/.claude.json` is not valid JSON | mcp-hub does not write to it. Fix the file, or restore from `~/.mcp-hub/backups/` |
 | `enable` → `registry_unavailable` / `start_failed` | network or registry outage, or the server crashed on start | retry. The `state.lastError` field (`mcp-hub info <id>`) has details |
-| Tool calls fail after a revoke | the catalogue revoked the entry | `mcp-hub disable <id>`, then run `/reload-plugins` in Claude Code (or restart it) |
+| Tool calls fail after a revoke | the catalogue revoked the entry | `mcp-hub disable <id>`, then restart Claude Code (`/reload-plugins` does not remove servers) |
 | Uninstall prints `Kept hub__x` | the user edited that entry | kept on purpose; remove it by hand if you no longer want it |
 
 ## Rollback

@@ -39,8 +39,9 @@ Run `mcp-hub status` and report the enabled servers (or `mcp-hub search --json` 
 
 ## Disable
 
-Confirm first, then `mcp-hub disable <id> --json`, then tell them: Run `/reload-plugins` in Claude Code (or restart it)
-to unload the server.
+Confirm first, then `mcp-hub disable <id> --json`, then tell them: Restart Claude Code to remove it
+(`/reload-plugins` adds servers but does not remove them; until the restart its tools fail because the hub no
+longer routes them).
 
 ## Errors (exit code non-zero; `--json` prints `{"error":{"code","message"}}`)
 
