@@ -13,7 +13,12 @@ const error = ref('')
 // Connection traffic (handshake, listings, SSE stream) is always audited but
 // hidden by default so the tab shows real tool use.
 const showConnection = ref(false)
-const visible = computed(() => (showConnection.value ? events.value : events.value.filter((e) => isToolCall(e.method))))
+const visible = computed(() =>
+  (showConnection.value ? events.value : events.value.filter((e) => isToolCall(e.method))).map((e) => ({
+    ...e,
+    label: activityLabel(e.method),
+  })),
+)
 const hiddenCount = computed(() => events.value.length - visible.value.length)
 let timer: ReturnType<typeof setInterval> | undefined
 let inFlight = false
@@ -64,7 +69,7 @@ const statusClass = (s: number) => (s >= 500 ? 'bad' : s >= 400 ? 'warn' : 'ok')
     </div>
 
     <div v-else-if="visible.length === 0 && !error" class="empty">
-      <p>No tool calls yet.</p>
+      <p>No tool calls in the last {{ events.length }} events.</p>
       <p class="muted">{{ hiddenCount }} connection events hidden — tick “Show connection activity” to see them.</p>
     </div>
 
@@ -87,8 +92,8 @@ const statusClass = (s: number) => (s >= 500 ? 'bad' : s >= 400 ? 'warn' : 'ok')
             <td><time :datetime="e.time">{{ fmtTime(e.time) }}</time></td>
             <td><code>{{ e.server }}</code></td>
             <td>
-              {{ activityLabel(e.method) }}
-              <code v-if="activityLabel(e.method) !== e.method" class="muted">{{ e.method }}</code>
+              {{ e.label }}
+              <code v-if="e.label !== e.method" class="muted">{{ e.method }}</code>
             </td>
             <td><code v-if="e.tool">{{ e.tool }}</code><span v-else class="muted">—</span></td>
             <td><span class="code-pill" :class="`code-pill--${statusClass(e.status)}`">{{ e.status }}</span></td>

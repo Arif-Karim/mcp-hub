@@ -53,10 +53,11 @@ func (h *handler) reverseProxy(id string, target *url.URL, rest, authz string, s
 				dropBody(id, resp)
 				return nil
 			}
-			if resp.StatusCode == http.StatusMethodNotAllowed {
-				// The MCP spec lets a server refuse the optional GET SSE stream
-				// with 405 (DeepWiki does, as text/plain). Pass the status through
-				// so the client stops asking, but never the untyped body.
+			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+				// MCP signals with these statuses: 404 = session expired, so the
+				// client re-initializes; 405 = optional GET SSE stream refused
+				// (DeepWiki, as text/plain). Pass the status through so the client
+				// can react, but never the untyped body.
 				dropBody(id, resp)
 				return nil
 			}

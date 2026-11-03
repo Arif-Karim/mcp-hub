@@ -7,7 +7,7 @@ const methods = (method: string): string[] => method.split(',')
 export const isToolCall = (method: string): boolean => methods(method).includes('tools/call')
 
 const labels: Record<string, string> = {
-  initialize: 'Connected',
+  initialize: 'Handshake',
   'notifications/initialized': 'Connection ready',
   'tools/list': 'Listed tools',
   'resources/list': 'Listed resources',
