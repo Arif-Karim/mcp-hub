@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -89,16 +91,34 @@ func TestSkillsStateTheEssentials(t *testing.T) {
 		},
 	}
 	// Teams keep their server in their own repo; only the catalogue PR goes to the hub repo.
-	cases["mcp-hub-build-server"] = append(cases["mcp-hub-build-server"], "your team's own repo")
-	cases["mcp-hub-publish-server"] = append(cases["mcp-hub-publish-server"], "your team's own repo")
-	// /reload-plugins loads new servers but does not remove disabled ones.
-	cases["mcp-hub"] = append(cases["mcp-hub"], "restart Claude Code to unload")
+	cases["mcp-hub-build-server"] = append(cases["mcp-hub-build-server"], "your team's own repo",
+		// package.sh's release URLs fall back to the hub repo; the local snippet is a check only.
+		"GITHUB_REPOSITORY", "for checking only")
+	cases["mcp-hub-publish-server"] = append(cases["mcp-hub-publish-server"], "your team's own repo",
+		// No write access to the hub: fork; a manual release run is as outward as pushing a tag.
+		"gh repo fork", "gh workflow run publish-mcp-server.yml -f version=")
+	// /reload-plugins loads new servers but does not remove disabled ones (same wording as #25).
+	cases["mcp-hub"] = append(cases["mcp-hub"], "Restart Claude Code to remove it\n(`/reload-plugins` adds servers but does not remove them")
 	for name, want := range cases {
 		c := skill(t, name)
 		for _, w := range want {
 			if !strings.Contains(c, w) {
 				t.Errorf("%s: SKILL.md does not mention %q", name, w)
 			}
+		}
+	}
+	// Show artifacts in the release snippet's block style so users paste rather than retype.
+	if c := skill(t, "mcp-hub-publish-server"); strings.Contains(c, "{ url:") {
+		t.Error("publish skill shows artifacts in flow style")
+	}
+}
+
+// The main skill's trigger must not swallow "add my MCP server to the hub".
+func TestMainSkillDescriptionPointsAtBuildAndPublish(t *testing.T) {
+	d := frontmatter(t, "mcp-hub", skillfiles.Content())["description"]
+	for _, w := range []string{"existing, approved", "mcp-hub-build-server", "mcp-hub-publish-server"} {
+		if !strings.Contains(d, w) {
+			t.Errorf("mcp-hub description does not mention %q", w)
 		}
 	}
 }
@@ -130,9 +150,12 @@ func TestInstallShUninstallsEverySkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "SKILLS=(" + strings.Join(wantSkills, " ") + ")\n"
-	if !strings.Contains(string(b), want) {
-		t.Fatalf("install.sh must declare %q", want)
+	m := regexp.MustCompile(`(?m)^SKILLS=\(([^)]*)\)`).FindSubmatch(b)
+	if m == nil {
+		t.Fatal("install.sh must declare SKILLS=(...)")
+	}
+	if got := strings.Fields(string(m[1])); !slices.Equal(got, wantSkills) {
+		t.Fatalf("install.sh SKILLS = %v, want %v", got, wantSkills)
 	}
 }
 

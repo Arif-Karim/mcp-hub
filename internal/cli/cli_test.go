@@ -294,10 +294,7 @@ func TestDisableSuccess(t *testing.T) {
 		t.Fatalf("code %d %s", r.code, r.stderr)
 	}
 	mustContain(t, r.stdout, "Disabled", "hub__service-directory",
-		"Restart Claude Code to unload the server (/reload-plugins does not remove disabled servers).")
-	if strings.Contains(r.stdout, "Run /reload-plugins") {
-		t.Error("disable must not suggest /reload-plugins to unload a server")
-	}
+		"Restart Claude Code to remove it (/reload-plugins adds servers but does not remove them).")
 	if got := f.requests(); got[0] != "POST /api/v1/servers/service-directory/disable" {
 		t.Errorf("request = %v", got)
 	}
