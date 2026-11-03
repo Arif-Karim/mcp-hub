@@ -151,6 +151,29 @@ func TestMethodNotAllowedIsPassedThroughWithoutBody(t *testing.T) {
 	}
 }
 
+// An expired or unknown MCP session is answered with 404 (the go-sdk sends it
+// as text/plain); the client must see 404 to re-initialize, not a 502.
+func TestSessionNotFoundIsPassedThroughWithoutBody(t *testing.T) {
+	up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "<b>session not found</b>", http.StatusNotFound)
+	})
+	f := newFixture(t, resolver{"svc-a": {URL: up.URL, Auth: catalogue.AuthNone}}, nil)
+	rec := serve(f.h, req(http.MethodPost, "/mcp/svc-a", callBody))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("body = %q, want empty", rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "" {
+		t.Errorf("content-type = %q, want none", ct)
+	}
+	assertSecurityHeaders(t, rec.Header())
+	if e := f.audit.only(t); e.Status != http.StatusNotFound {
+		t.Errorf("audit = %+v", e)
+	}
+}
+
 func TestUpstreamAuthRejectionIsMappedTo502(t *testing.T) {
 	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {

@@ -13,7 +13,7 @@ describe('isToolCall', () => {
 
 describe('activityLabel', () => {
   it('gives friendly labels to connection traffic', () => {
-    expect(activityLabel('initialize')).toBe('Connected')
+    expect(activityLabel('initialize')).toBe('Handshake')
     expect(activityLabel('notifications/initialized')).toBe('Connection ready')
     expect(activityLabel('tools/list')).toBe('Listed tools')
     expect(activityLabel('resources/list')).toBe('Listed resources')
