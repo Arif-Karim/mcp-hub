@@ -174,6 +174,73 @@ func TestSessionNotFoundIsPassedThroughWithoutBody(t *testing.T) {
 	}
 }
 
+// Client errors (e.g. go-sdk's 400/406 text/plain for a bare curl POST) are
+// passed through with any untyped body dropped; 401/403 and non-4xx statuses
+// keep their existing handling.
+func TestUpstreamClientErrorsPassThroughWithoutUntypedBody(t *testing.T) {
+	cases := []struct {
+		status, want int
+		ct           string
+	}{
+		{http.StatusBadRequest, http.StatusBadRequest, "text/plain; charset=utf-8"},
+		{http.StatusNotFound, http.StatusNotFound, "text/plain; charset=utf-8"},
+		{http.StatusMethodNotAllowed, http.StatusMethodNotAllowed, "text/html"},
+		{http.StatusNotAcceptable, http.StatusNotAcceptable, "text/plain; charset=utf-8"},
+		{http.StatusNotAcceptable, http.StatusNotAcceptable, ""},
+		{http.StatusUnauthorized, http.StatusBadGateway, "text/plain"},
+		{http.StatusForbidden, http.StatusBadGateway, "text/plain"},
+		{http.StatusOK, http.StatusBadGateway, "text/html"},
+		{http.StatusInternalServerError, http.StatusBadGateway, "text/plain"},
+	}
+	for _, c := range cases {
+		up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+			if c.ct == "" {
+				w.Header()["Content-Type"] = nil
+			} else {
+				w.Header().Set("Content-Type", c.ct)
+			}
+			w.WriteHeader(c.status)
+			_, _ = io.WriteString(w, "<script>alert(1)</script>")
+		})
+		f := newFixture(t, resolver{"svc-a": {URL: up.URL, Auth: catalogue.AuthNone}}, nil)
+		rec := serve(f.h, req(http.MethodPost, "/mcp/svc-a", callBody))
+		if rec.Code != c.want {
+			t.Errorf("%d %q: status = %d, want %d", c.status, c.ct, rec.Code, c.want)
+			continue
+		}
+		if strings.Contains(rec.Body.String(), "<script>") {
+			t.Errorf("%d %q: upstream body leaked", c.status, c.ct)
+		}
+		if c.want == c.status {
+			if rec.Body.Len() != 0 || rec.Header().Get("Content-Type") != "" {
+				t.Errorf("%d %q: body = %q, content-type = %q; want both empty", c.status, c.ct, rec.Body.String(), rec.Header().Get("Content-Type"))
+			}
+		}
+		assertSecurityHeaders(t, rec.Header())
+		wantAudit := c.want
+		if c.status == http.StatusUnauthorized || c.status == http.StatusForbidden {
+			wantAudit = c.status // the audit keeps the upstream's auth rejection
+		}
+		if e := f.audit.only(t); e.Status != wantAudit {
+			t.Errorf("%d %q: audit = %+v", c.status, c.ct, e)
+		}
+	}
+}
+
+// A typed (JSON) 4xx body is a JSON-RPC error and is forwarded unchanged.
+func TestUpstreamClientErrorWithJSONBodyIsForwarded(t *testing.T) {
+	up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","error":{"code":-32600,"message":"bad"}}`)
+	})
+	f := newFixture(t, resolver{"svc-a": {URL: up.URL, Auth: catalogue.AuthNone}}, nil)
+	rec := serve(f.h, req(http.MethodPost, "/mcp/svc-a", callBody))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"code":-32600`) {
+		t.Fatalf("status = %d, body = %q", rec.Code, rec.Body.String())
+	}
+}
+
 func TestUpstreamAuthRejectionIsMappedTo502(t *testing.T) {
 	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
