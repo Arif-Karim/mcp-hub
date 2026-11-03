@@ -16,11 +16,40 @@ describe('PublishView', () => {
     expect(steps[4].text()).toMatch(/approved/i)
   })
 
+  it('says which repo each step happens in', () => {
+    const steps = mount(PublishView).findAll('[data-test=steps] > li').map((s) => s.text())
+    expect(steps[0]).toContain("your team's own repo")
+    expect(steps[1]).toContain('publish-mcp-server.yml')
+    expect(steps[2]).toContain('mcp-hub')
+    expect(steps[2]).toContain('internal/catalogue/default.yaml')
+  })
+
+  it('does not imply approval or revocation is instant', () => {
+    const w = mount(PublishView)
+    expect(w.findAll('[data-test=steps] > li')[4].text()).toContain('next mcp-hub release')
+    expect(w.findAll('[data-test=steps] > li')[3].text()).toContain('CODEOWNERS')
+    const revoked = w.findAll('[data-test=lifecycle] .lifecycle__row')[2].text()
+    expect(revoked).toContain('after the next mcp-hub release')
+  })
+
   it('points to the Claude Code skills near the top', () => {
     const callout = mount(PublishView).get('.publish__intro [data-test=ask-claude]')
-    expect(callout.text()).toContain('Or just ask Claude Code')
-    expect(callout.text()).toContain("help me build an MCP server for my team's service")
-    expect(callout.text()).toContain('the mcp-hub skills walk you through building and publishing')
+    expect(callout.text()).toContain('Claude Code')
+    expect(callout.text()).toContain('mcp-hub-build-server')
+    expect(callout.text()).toContain('mcp-hub-publish-server')
+  })
+
+  it('gives the Copy button an accessible name', () => {
+    expect(mount(PublishView).get('[data-test=copy]').attributes('aria-label')).toBe('Copy example catalogue entry')
+  })
+
+  it('selects the example for manual copy when copying fails', async () => {
+    vi.stubGlobal('navigator', {})
+    const w = mount(PublishView, { attachTo: document.body })
+    await w.get('[data-test=copy]').trigger('click')
+    await flushPromises()
+    expect(window.getSelection()?.toString()).toContain('id: my-service')
+    w.unmount()
   })
 
   it('compares local and remote servers', () => {
