@@ -1,136 +1,192 @@
-# design
+# Design
 
-_To be completed during the build._
+## Overview
 
-## Security controls (proxy/token)
-
-- **Credentials in, credentials out.** The proxy forwards only an allowlist of request headers upstream
-  (`Accept`, `Content-Type`, `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Last-Event-ID`). Client
-  `Authorization`, `Cookie`, `Proxy-Authorization` and any other header are always dropped. Upstream
-  `Set-Cookie` and `WWW-Authenticate` are removed (no cookies planted on the hub origin; no OAuth flow
-  started against an upstream-controlled URL). Upstream 401/403 → 502 `start_failed` "upstream rejected hub
-  credentials" (audited with the upstream status).
-- **Upstream content is inert on the hub origin.** Every proxied response carries `X-Content-Type-Options: nosniff`
-  and `Content-Security-Policy: sandbox; default-src 'none'`; only `application/json` and `text/event-stream`
-  (or an empty body) pass, anything else (e.g. `text/html`) → 502 `start_failed`. Without this a malicious
-  upstream could serve HTML that runs same-origin with `/api/v1` and enables servers.
-- **Injected token.** For `auth: hub-jwt`, every request gets a fresh EdDSA (Ed25519) JWT:
-  `iss` = hub, `sub` = local user, `aud` = the catalogue entry id (a token for one server is useless at
-  another), `iat`/`nbf`/`exp` with a 5-minute default TTL (hard cap 15 min), random `jti`, `kid` header.
-  `auth: none` sends no credentials. Token failure, an unknown auth mode, or a `hub-jwt` upstream on plaintext
-  `http://` to a non-loopback host → 502, upstream never called.
-- **Keys.** Ed25519 PKCS8 PEM at a configured path, created with dir 0700 / file 0600; a key file readable by
-  group/other is refused at startup. Public key published at `/.well-known/jwks.json` (`Cache-Control: max-age=300`).
-  The verifier accepts only `EdDSA` (rejects `none` and HS* alg-confusion), checks `kid`, `iss`, `aud`, `exp`, `nbf`,
-  `iat` with 30s leeway.
-- **Who can call the daemon.** Binds loopback only. A server-wide guard (`internal/server/guard.go`) rejects (403)
-  any request whose `Host` is not `127.0.0.1`/`localhost`/`[::1]` (DNS rebinding — protects `/api/v1/*` too) and
-  any non-GET/HEAD request with a present non-loopback `Origin`, including `null` (CSRF against enable/disable).
-  The proxy is stricter: a non-loopback Origin is refused on every method (GET opens an SSE stream). Claude Code
-  and the CLI send no Origin, so they are unaffected.
-- **Limits.** Request bodies capped at 4 MiB (413). SSE responses stream unbuffered (`FlushInterval: -1`).
-- **Audit / logging.** One event per proxied request (server, JSON-RPC method, tool name for `tools/call`,
-  upstream status, duration, user) to an append-only 0600 JSONL file + in-memory ring served at
-  `GET /api/v1/audit`. Tool arguments, results, tokens and headers are never decoded into the event or logged;
-  client-controlled method/tool strings are truncated to 128 chars. Unknown server ids are rejected (404) and
-  not audited, since nothing was proxied. Client disconnects are audited as 499. File write failures are counted
-  (`Log.WriteErrors()`, for a future `degraded` status flag) and logged without flooding.
-- **What a real IdP would replace.** The local issuer stands in for an enterprise IdP: in production the proxy
-  would perform OAuth 2.0 token exchange (RFC 8693) of the developer's SSO session for a per-server audience
-  token, keys would live in an HSM/KMS with rotation (JWKS already supports multiple keys by `kid`), and audit
-  events would ship to the SIEM rather than a local file.
-
-## Claude config safety
-
-`internal/claudeconfig` is the only code that writes `~/.claude.json` (path: `CLAUDE_CONFIG_PATH`, default `~/.claude.json`).
-
-- **Marker + ledger.** Entries are named `hub__<id>`; `~/.mcp-hub/state.json` (`{"version":1,"servers":{id:{...}}}`,
-  0600, dir 0700) records each one with a sha256 of its canonical JSON (sorted keys, compact — so Claude Code
-  re-serialising the file is not mistaken for an edit). Ids must match `^[a-z0-9][a-z0-9-]{1,62}$`.
-- **Conflict rules (`ErrConfigConflict` → `config_conflict`).** Add/Remove refuse a `hub__<id>` that is not in the
-  ledger (the user made it) or whose hash differs from the ledger (the user edited it). Re-adding an unchanged owned
-  entry is a no-op. Remove of an owned entry already gone just drops the ledger record. `RemoveAll` (uninstall) removes
-  every clean owned entry in one write and returns `*PartialRemoveError{Skipped}` (unwraps to `ErrConfigConflict`)
-  listing the edited ones it left behind. Non-`hub__` keys are never touched.
-- **Invalid input (`ErrConfigInvalid` → `config_invalid`).** Unparseable JSON, non-object top level, or a non-object /
-  null `mcpServers` → error, nothing written (file bytes, ledger and backups unchanged).
-- **Preservation.** Both levels decode into `map[string]json.RawMessage`, so values we do not own pass through
-  (no HTML escaping, numbers untouched). Key order is not preserved; output is 2-space indented like Claude Code.
-- **Atomic write.** Backup current bytes to `~/.mcp-hub/backups/claude.json.<UTC ns timestamp>[-NNN]` (0600, `O_EXCL`,
-  fsync'd, named to sort after the newest even if the clock repeats; newest 5 kept; only files matching that exact layout
-  are pruned), write a temp file in the target's directory, fsync, keep the original mode (new file 0600) and owner
-  (best effort, so `sudo` cannot leave it root-owned), rename, fsync the dir.
-  A symlinked `~/.claude.json` is resolved and the real file replaced, so the link survives; a dangling link is an error.
-- **Lost-update guard.** Immediately before rename the file is re-read and compared to the bytes we parsed. If it changed,
-  the edit is re-applied once on the fresh content; if it changed again we return `ErrConfigConflict` ("retry").
-  An in-process mutex plus an exclusive advisory `flock` on `<MCP_HUB_HOME>/claudeconfig.lock` (0600, unix) serialise
-  every read-modify-write across the daemon and the CLI.
-- **Ledger ordering (ledger → config → ledger).** Before the config write the ledger is saved as old ∪ new, where a
-  record that replaces an existing entry carries `PrevHash` (the hash it replaces). After the rename the ledger is saved
-  as new, and `PrevHash` is cleared once the config entry matches `Hash`. Any error before the rename lands restores the
-  previous ledger (one deferred restore), so a failed call never claims an entry it did not write (PR #4 review must-fix:
-  previously a failed retry could leave the ledger claiming a user-created `hub__x`, which a later Remove would delete).
-  A crash leaves the ledger claiming an entry that is absent or still at `PrevHash`; both count as ours, so the next call
-  self-heals. Config-first ordering was rejected: a crash would leave an unrecorded `hub__` entry locked as "user-owned".
-- **Known gap.** There is no lock shared with Claude Code itself (its own locking, if any, is not a published contract), so a write landing
-  between our re-check and `rename` can still be lost. The window is microseconds and mitigated by the re-check plus
-  the backups; it cannot be closed from outside Claude Code.
-
-## Enable flow (lane F1: `internal/hub`, `internal/runner`, `internal/daemon`)
+One Go binary, `mcp-hub`, runs a per-user daemon on `127.0.0.1:7420`. Claude Code never talks to an MCP server
+directly. Each enabled server becomes a `hub__<id>` entry in `~/.claude.json` whose URL is the hub's own proxy, so
+every call goes through one place that adds credentials and writes the audit log.
 
 ```
-UI / CLI / skill            daemon (127.0.0.1:7420)                                    disk / processes
-POST /servers/{id}/enable ─▶ hub.Service.Enable (per-id mutex)
-                             ├─ catalogue.Get(id)            ── 404 not_found
-                             ├─ catalogue.CanEnable          ── 403 not_approved (nothing installed or written)
-                             ├─ local only:
-                             │   ├─ registry.Select(platform) ── 422 unsupported_platform
-                             │   ├─ Installer.Install          ── download → sha256 → unpack ~/.mcp-hub/servers/<id>/<ver>
-                             │   │                                (422 checksum_mismatch / artifact_rejected, 502 registry_unavailable)
-                             │   └─ runner.Start               ── free loopback port, env {PORT, HUB_JWKS_URL, HUB_AUDIENCE=id,
-                             │                                    HUB_ISSUER}, own pgid, ~/.mcp-hub/logs/<id>.log, wait GET /healthz
-                             │                                    (502 start_failed + log tail; process killed)
-                             ├─ claudeconfig.Add(hub__<id> → http://127.0.0.1:7420/mcp/<id>)
-                             │                                 ── 409 config_conflict / 422 config_invalid
-                             │                                    → a process started by THIS call is stopped (rollback)
-                             └─ record enabled → Resolve(id) now answers the proxy
-Claude Code ── /mcp/<id> ──▶ proxy: Resolve → strip client creds → inject hub JWT (aud=id) → upstream → audit event
+ developer laptop (macOS)
+ ─────────────────────────────────────────────────────────────────────────────
+  Claude Code ── skill ──▶ mcp-hub CLI ─┐
+      │                                 │  /api/v1 (enable, search, status)
+      │ hub__<id> = http://127.0.0.1:7420/mcp/<id>
+      ▼                                 ▼
+  ┌─────────────── mcp-hub daemon (127.0.0.1:7420) ────────────────┐   Browser UI
+  │ guard: loopback Host + Origin checks                           │◀── (Activity tab,
+  │ /api/v1/*   catalogue · enable/disable · status · audit        │     enable/disable)
+  │ /mcp/<id>   proxy: strip client creds, inject JWT, audit event │
+  │ /.well-known/jwks.json   dev token issuer (IdP stand-in)       │
+  └───┬──────────────────────┬──────────────────────────┬──────────┘
+      │ writes               │ starts                   │ proxies
+      ▼                      ▼                          ▼
+  ~/.claude.json         local MCP server           remote MCP server
+  (hub__ entries)        127.0.0.1:<port>,          (https, auth: none)
+  ~/.mcp-hub/            own process group,
+  state.json, logs/,     verifies JWT via JWKS
+  audit.jsonl, servers/        ▲
+                               │ tar.gz, sha256 checked before unpack
+                         artifact registry (GitHub Releases; prod: Artifactory)
 ```
 
-- **Disable** removes the config entry first; if that conflicts (user edited `hub__<id>`) the server keeps running, so
-  Claude Code is never left pointing at a dead proxy route the hub can't clean up. Then the process gets SIGTERM to its
-  process group, SIGKILL after 5s.
-- **Restart (Restore).** For every ledger-owned id: delisted, revoked or no-longer-approved entries are **auto-disabled**
-  (config entry removed, WARN log, state `lastError: "disabled: revoked by platform team"` shown in the UI) — revocation
-  in the central catalogue reaches every laptop on its next daemon start without trusting the developer to act.
-  Approved local servers are restarted from the cached install (re-downloaded if missing), approved remotes are ready.
-  A server that fails to come back is `status: error` with the reason and does not resolve. Restore runs in the
-  background after the listener is serving (the UI answers at once; restoring servers show `stopped` and do not resolve),
-  each server time-boxed to 2 minutes.
-- **State.** `running` / `stopped` (clean exit) / `error` (crash, with the exit reason) for local servers, `ready` for
-  remotes, `disabled` otherwise. Only enabled + running/ready entries resolve in the proxy. A failed re-enable of an
-  already healthy server leaves it serving.
-- **Process hygiene.** The child environment is minimal (`PATH`, `HOME`, the hub variables, `PORT`) — the daemon's own
-  environment, which may hold credentials, is not inherited. Logs are 0600 in a 0700 dir. Whenever the leader exits
-  (Stop, crash, failed start) the whole process group is SIGKILLed, so a grandchild that ignores SIGTERM cannot be
-  orphaned holding the port.
-- **Shutdown order.** SIGINT/SIGTERM → HTTP shutdown → hub `Close` (new enables refused with `start_failed` "daemon
-  shutting down", in-flight enables/restores drained, bounded 15s) → runner `StopAll` (aborts any start still waiting for
-  health, kills it, then stops every server) → audit log closed. No server process outlives the daemon. The port is bound
-  before anything else, so a second daemon exits with "address in use" without starting duplicate processes.
-- **Known gaps.** The free port is picked then released before the server binds (a race another process could win; the
-  health check then fails cleanly). No automatic restart of a crashed server — the UI shows `error`, Enable restarts it.
-  A second daemon on a *different* port but the same `MCP_HUB_HOME` would start duplicate processes (config writes are
-  flock-safe; processes are not). Group SIGKILL after the leader is reaped uses its pid as the group id; pid reuse as a
-  new group leader in that instant is theoretically possible.
+## Components
+
+| Package | Responsibility | Boundary |
+|---|---|---|
+| `internal/catalogue` | strict YAML load, validation (all problems at once), search; default catalogue embedded | pure, no I/O beyond reading the file |
+| `internal/registry` | pick the platform artifact, download, **sha256 before unpack**, safe unpack, cache | writes only under `~/.mcp-hub/servers` |
+| `internal/runner` | start/stop local servers: free loopback port, minimal env, own process group, health wait | the only code that spawns processes |
+| `internal/hub` | enable/disable/restore orchestration, per-id serialisation, rollback, state for the API | composes the other packages |
+| `internal/claudeconfig` | atomic, marker + ledger edits of `~/.claude.json` | the only code that writes Claude config |
+| `internal/token` | Ed25519 JWT issuer + JWKS | stand-in for the enterprise IdP |
+| `internal/proxy` | `/mcp/{id}` reverse proxy, credential stripping/injection, response hardening | reads catalogue + hub state via a resolver |
+| `internal/audit` | append-only JSONL + in-memory ring for `GET /api/v1/audit` | never sees arguments or results |
+| `internal/server`, `internal/httpx` | root mux, Host/Origin guard, contract error codes | contract: `api/openapi.yaml` |
+| `internal/daemon` | builds the whole graph from `MCP_HUB_HOME`; used by `serve` **and** the e2e test | |
+| `internal/cli`, `internal/skillfiles` | CLI over the API; Claude Code skill (embedded in the binary, written by `install-skill`, `install.sh` or the UI banner) that drives the CLI | the skill always matches the daemon version |
+| `web/` | Vue 3 UI (catalogue, detail drawer, Activity tab), embedded in the binary | talks to `/api/v1` only |
+| `examples/mcp-server-template` | reference `service-directory` server + publish workflow | separate Go module |
+
+## Enable flow
+
+```
+POST /api/v1/servers/{id}/enable  (UI, CLI or skill → CLI)
+ hub.Enable (per-id mutex)
+ ├─ catalogue.Get / CanEnable        404 not_found · 403 not_approved (nothing installed or written)
+ ├─ local only:
+ │   ├─ registry.Select(platform)    422 unsupported_platform
+ │   ├─ registry.Install             download → sha256 → unpack → ~/.mcp-hub/servers/<id>/<ver>
+ │   │                               422 checksum_mismatch / artifact_rejected · 502 registry_unavailable
+ │   └─ runner.Start                 env {PATH, HOME, PORT, HUB_JWKS_URL, HUB_AUDIENCE=id, HUB_ISSUER},
+ │                                   log ~/.mcp-hub/logs/<id>.log, wait GET /healthz (502 start_failed + log tail)
+ ├─ claudeconfig.Add(hub__<id> → http://127.0.0.1:7420/mcp/<id>)
+ │                                   409 config_conflict · 422 config_invalid → stop the process THIS call started
+ └─ mark enabled → proxy now resolves /mcp/<id>
+Claude Code → /mcp/<id> → proxy: resolve → strip client creds → inject JWT (aud=id) → upstream → audit event
+```
+
+- **Disable** removes the config entry first. If that conflicts (the user edited `hub__<id>`), the server keeps
+  running so Claude Code is never left pointing at a dead route. Then SIGTERM to the process group, SIGKILL after 5s.
+- **Restore on daemon start.** Runs in the background once the listener is serving, each server time-boxed to 2
+  minutes. For every ledger-owned id: revoked, delisted or no-longer-approved entries are auto-disabled
+  (`lastError: "disabled: revoked by platform team"`); approved local servers restart from the cache. Revocation takes
+  effect when the catalogue the daemon loads changes (a new release, or a new `MCP_HUB_CATALOGUE` file) **and** the
+  daemon restarts. Pushing revocations to every laptop needs the central catalogue service (production table below;
+  not built).
+- **Shutdown.** SIGINT/SIGTERM → HTTP shutdown → hub `Close` (new enables refused, in-flight enables and restores
+  drained, bounded 15s) → runner `StopAll` (aborts starts still waiting for health, then stops every server) → audit log.
+- **Process groups.** Whenever a server's leader process exits (stop, crash or failed start), the whole process group
+  is SIGKILLed, so a child that ignores SIGTERM is not orphaned.
+- **State.** `running` / `stopped` / `error` (with reason) for local, `ready` for remote, `disabled` otherwise. Only
+  enabled and running/ready entries resolve in the proxy. A failed re-enable leaves a healthy server serving.
 
 ## Identity tokens
 
-The hub token is an identity assertion, not just a "came through the hub" stamp: `sub` is the developer, `aud` the
-server. That lets each MCP server call its own backend APIs on the user's behalf and make its own access decisions
-(e.g. "is `sub` in the on-call group for this service?"); the example server logs `sub` per tool call. In production the
-hub's local issuer is replaced by the bank's IdP (token exchange of the developer's SSO session for a per-server
-audience token) and every server, local or remote, verifies against the IdP's JWKS — exactly the code path the example
-server uses today against `HUB_JWKS_URL`. There is no central token database to protect or revoke from.
-Responsibilities split cleanly: **revoking a server** is a catalogue concern (approval → `revoked`, auto-disabled on
-restart, refused on enable); **revoking a user's access** is the IdP's and each server's concern.
+The hub token is an identity assertion, not just a "came through the hub" stamp. `sub` is the developer and `aud`
+is the server id, so a token for one server is useless at another. That lets each MCP server call its own backend
+APIs on the user's behalf and make its own access decisions (for example "is `sub` in the on-call group for this
+service?"). The example server verifies the token against `HUB_JWKS_URL` and binds each MCP session to `sub`.
+
+- Fresh EdDSA (Ed25519) JWT per request: `iss`, `sub`, `aud`, `iat`/`nbf`/`exp` (5 min default, 15 min cap), random
+  `jti`, `kid`. Verifiers accept only `EdDSA` (no `none`, no HS* alg confusion) with 30s leeway.
+- Key is PKCS8 PEM under `~/.mcp-hub` (dir 0700, file 0600); a group/other-readable key is refused at startup.
+- **Production:** the local issuer is replaced by the bank's IdP (OAuth 2.0 token exchange, RFC 8693, of the
+  developer's SSO session for a per-server audience token). Every server, local or remote, verifies against the IdP's
+  JWKS, which is the same code path the example server uses today. There is **no central token database** to
+  protect or revoke from. **Revoking a server** is a catalogue concern (approval → `revoked`: refused on enable,
+  auto-disabled on restart). **Controlling a user's access** is the IdP's and each server's concern.
+
+## Security and privacy controls
+
+- **Loopback only.** `serve` refuses a non-loopback `MCP_HUB_ADDR`. A server-wide guard returns 403 for any `Host`
+  other than `127.0.0.1`/`localhost`/`[::1]` (DNS rebinding, protects `/api/v1/audit` too) and for any non-GET/HEAD
+  request with a non-loopback `Origin`, including `null` (CSRF on enable/disable). The proxy refuses a foreign
+  `Origin` on every method. Claude Code and the CLI send no `Origin`.
+- **Credentials in.** The proxy forwards an allowlist of request headers only (`Accept`, `Content-Type`,
+  `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Last-Event-ID`); client `Authorization`, `Cookie` and anything else are
+  dropped. Unknown auth mode, token failure, or a hub JWT bound for plaintext `http://` on a non-loopback host → 502,
+  upstream never called. Remote catalogue entries must be `https` and `auth: none`, so no hub JWT goes to a third party.
+- **Upstream bytes are inert.** The proxy shares an origin with the UI, so a hostile upstream returning `text/html`
+  could script `/api/v1`. Every proxied response gets `nosniff` and `CSP: sandbox; default-src 'none'`; only
+  `application/json`, `text/event-stream` or empty bodies pass. Upstream `Set-Cookie` and `WWW-Authenticate` are
+  stripped; upstream 401/403 → 502.
+- **Supply chain.** sha256 is checked before an archive is opened. Unpack allows only plain files and dirs (no
+  traversal, absolute paths, links or devices), caps download and unpacked size at 100 MiB and entries at 10k, and
+  refuses https→http redirects. Release archives and the installer use the same checksum rule.
+- **Processes.** Local servers get a minimal env (the daemon's environment, which may hold credentials, is not
+  inherited), a loopback port, and their own process group. Logs are 0600 in a 0700 dir.
+- **Audit / logging.** One event per proxied request: time, server, JSON-RPC method, tool name, status, duration,
+  user. Arguments, results, tokens and headers are never decoded or logged. Client-controlled strings are truncated
+  and CR/LF-stripped. Request bodies are capped at 4 MiB. SSE streams unbuffered.
+- **Privacy.** Synthetic data only. No secret is ever written to Claude Code config: a `hub__` entry is just a URL.
+
+## Claude config safety
+
+`internal/claudeconfig` is the only writer of `~/.claude.json` (`CLAUDE_CONFIG_PATH`).
+
+- **Marker + ledger.** Entries are named `hub__<id>`. `~/.mcp-hub/state.json` records each one with a sha256 of its
+  canonical JSON, so Claude Code re-serialising the file is not mistaken for an edit. We modify or remove an entry
+  only when the marker **and** an unchanged ledger hash say it is ours; otherwise `config_conflict`. Uninstall
+  removes clean owned entries and lists edited ones it kept.
+- **Never corrupt.** Unparseable JSON or a non-object `mcpServers` → `config_invalid`, nothing written. Unknown keys
+  pass through as raw JSON. Writes are backup (newest 5) → temp file → fsync → rename → dir fsync, keeping mode,
+  owner and symlinks. A cross-process `flock` serialises the daemon and CLI; the file is re-read just before rename
+  and the edit re-applied once if Claude Code changed it.
+- **Ordering ledger → config → ledger** for crash safety (see decisions.md).
+- **Known gap.** There is no lock shared with Claude Code itself. A write landing between our re-check and rename can
+  still be lost; the window is microseconds and backups cover it.
+
+## Known gaps (runtime)
+
+- The free port is picked then released before the server binds; another process could win the race (the health
+  check then fails cleanly).
+- A crashed local server is not restarted automatically; the UI shows `error` and Enable restarts it.
+- A second daemon on the same `MCP_HUB_HOME` is refused only if it uses the same port. On a different port it would
+  start duplicate server processes (config writes are flock-safe; processes are not).
+- Group SIGKILL after the leader is reaped uses the leader's pid as the group id; pid reuse in that instant could hit
+  the wrong group (unlikely).
+
+## Tech choices
+
+- **Go**, standard library first; deps limited to `yaml.v3`, `golang-jwt/jwt/v5` and the official MCP Go SDK (example
+  server and e2e). One static binary is easy to ship to laptops and to sign later.
+- **Vue 3 + Vite + TS**, hand-written CSS, embedded with `go:embed`. No component library.
+- **Bash installer** plus a per-user LaunchAgent; no sudo.
+- Contract-first: `api/openapi.yaml` is the source of truth for the UI types, CLI and server.
+
+## Path to production: CI/CD → cloud (not built)
+
+Everything in this section is a proposal. None of it is built.
+
+```
+team repo PR ──▶ CI gates: verify.sh (lint, gosec, race tests, coverage, govulncheck, gitleaks), mutation, CodeQL
+            ──▶ merge to main (branch protection) ──▶ tag ──▶ build + sign artefact ──▶ Artifactory
+catalogue PR ─▶ same gates + platform/security approval ──▶ catalogue service: dev → test → prod (promotion with approvals)
+laptops ◀── MDM (Jamf) pushes the signed mcp-hub binary + managed Claude Code settings; daemons poll the catalogue service
+```
+
+1. **Pipeline.** Every PR runs the gates that exist today (verify, mutation, CodeQL, gitleaks, govulncheck). Release
+   tags build **signed, notarised** artefacts and publish them to **Artifactory** instead of GitHub Releases.
+2. **Hub binary on laptops.** Distributed by **MDM (Jamf)** running the same installer with `--version` pinned, plus a
+   **managed Claude Code settings** file that only allows MCP servers whose URL is the hub proxy (ADR 3).
+3. **Catalogue service.** The catalogue becomes a central service (a container on the bank's Kubernetes or ECS),
+   deployed by pipeline with **environment promotion dev → test → prod** and approval gates. Entries still change by
+   reviewed PR. Daemons poll it, so a revoke reaches every laptop without a release or restart.
+4. **Identity.** The bank's IdP (Entra ID or Okta) replaces the local dev issuer: token exchange of the developer's SSO
+   session for a per-server audience token. Servers verify against the IdP's JWKS (same code path as today).
+5. **Remote MCP servers.** Internal teams deploy them as containers behind the bank's API gateway, with the same
+   token audience model (`aud` = catalogue id) and the same proxy in front.
+6. **Audit.** Events ship to the SIEM instead of a local file.
+
+## Production / cloud shape (summary)
+
+| Here (take-home) | In the bank |
+|---|---|
+| Catalogue YAML embedded in the binary or `MCP_HUB_CATALOGUE`; a revoke ships in a release | Central catalogue service (**not built**); entries change by **PR** reviewed by platform/security, then published. Daemons poll it, so revocation is fleet-wide without a restart |
+| GitHub Releases + sha256 | **Artifactory** (internal mirror, retention, scanning); signed artifacts and notarised binaries |
+| Local Ed25519 issuer | Bank **IdP**: token exchange per server audience; keys in HSM/KMS with rotation (JWKS already supports `kid`) |
+| Skill + catalogue guide Claude | **Managed Claude Code settings** allow only MCP servers whose URL is the hub proxy (see decisions.md) |
+| `curl … install.sh` | Fleet distribution via **MDM** (Jamf or similar) running the same installer with `--version` pinned |
+| `audit.jsonl` on the laptop | Audit events shipped to the SIEM |
+| Remote servers: public DeepWiki/Context7 | Internally hosted remote servers behind the same proxy, receiving IdP tokens |
