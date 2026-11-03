@@ -123,6 +123,7 @@ Next steps:
   3. Enable the server at http://127.0.0.1:7420 or ask Claude Code, then /reload-plugins.
   4. Afterwards, Ctrl-C the hub and restore the normal one:
        launchctl bootstrap gui/\$(id -u) ~/Library/LaunchAgents/com.mcp-hub.daemon.plist
+       launchctl kickstart gui/\$(id -u)/com.mcp-hub.daemon   # bootstrap loads it but may not start it
      Dev-only entries are then auto-disabled; restart Claude Code to drop their hub__* servers.
 EOF
 
