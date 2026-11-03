@@ -49,15 +49,18 @@ func (h *handler) reverseProxy(id string, target *url.URL, rest, authz string, s
 			}
 			if resp.StatusCode == http.StatusAccepted && resp.Header.Get("Content-Type") == "" {
 				// MCP answers notifications with 202 and no content; servers may
-				// send it chunked. Drop any body rather than forward it untyped,
-				// draining a little first so the upstream connection can be reused.
-				if n, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10)); n > 0 {
-					slog.Debug("proxy dropped untyped 202 body", "server", httpx.LogSafe(id), "bytes", n)
-				}
-				_ = resp.Body.Close()
-				resp.Body, resp.ContentLength = http.NoBody, 0
-				resp.TransferEncoding = nil
-				resp.Header.Del("Content-Length")
+				// send it chunked. Drop any body rather than forward it untyped.
+				dropBody(id, resp)
+				return nil
+			}
+			if resp.StatusCode >= 400 && resp.StatusCode < 500 && !allowedContentType(resp) {
+				// MCP signals with client errors: 404 = session expired, so the
+				// client re-initializes; 405 = optional GET SSE stream refused
+				// (DeepWiki, as text/plain); 400/406 = bad request or missing
+				// Accept (go-sdk, as text/plain). Pass the status through so the
+				// client can react, but never the untyped body. (401/403 were
+				// handled above.)
+				dropBody(id, resp)
 				return nil
 			}
 			if !allowedContentType(resp) {
@@ -81,6 +84,19 @@ func (h *handler) reverseProxy(id string, target *url.URL, rest, authz string, s
 		Transport:     h.cfg.Transport,
 		ErrorLog:      slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
 	}
+}
+
+// dropBody discards resp's body and content headers, draining a little first
+// so the upstream connection can be reused.
+func dropBody(id string, resp *http.Response) {
+	if n, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10)); n > 0 {
+		slog.Debug("proxy dropped upstream body", "server", httpx.LogSafe(id), "status", resp.StatusCode, "bytes", n)
+	}
+	_ = resp.Body.Close()
+	resp.Body, resp.ContentLength = http.NoBody, 0
+	resp.TransferEncoding = nil
+	resp.Header.Del("Content-Length")
+	resp.Header.Del("Content-Type")
 }
 
 // allowedContentType passes only what MCP streamable HTTP uses. Anything else
