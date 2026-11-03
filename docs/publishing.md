@@ -195,6 +195,7 @@ launchctl bootout gui/$(id -u)/com.mcp-hub.daemon      # if the LaunchAgent is r
 MCP_HUB_CATALOGUE=<absolute path printed by the script>/catalogue.yaml mcp-hub serve
 # ...when done, Ctrl-C and restore the normal hub:
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mcp-hub.daemon.plist
+launchctl kickstart gui/$(id -u)/com.mcp-hub.daemon   # bootstrap loads it but may not start it
 ```
 
 `MCP_HUB_CATALOGUE` **replaces** the built-in catalogue rather than merging
