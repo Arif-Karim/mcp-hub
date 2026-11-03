@@ -85,11 +85,28 @@ checksum-verified servers; a sandbox (macOS `sandbox-exec`, containers) is a lat
 **Consequences.** The remote path (proxy, audit, response hardening) is real and testable. The "remote server with an
 IdP token" path is not exercised; the local `service-directory` server demonstrates token verification instead.
 
-## 8. What we intentionally did not build
+## 8. Skills ship inside the binary today; a Claude Code plugin in an internal marketplace in production
+
+**Context.** Engineers should be able to ask Claude Code to "build an MCP server for my team's service" or "publish
+my MCP server to the hub". That needs two more skills (`mcp-hub-build-server`, `mcp-hub-publish-server`) next to the
+`mcp-hub` skill, all kept in step with the template, `docs/publishing.md` and the daemon.
+
+**Decision.** All three live in `internal/skillfiles/<name>/SKILL.md`, embedded with `go:embed`. `mcp-hub
+install-skill`, `install.sh` and the UI banner write each one to `~/.claude/skills/<name>/`. In production they would be
+packaged as a Claude Code plugin in an internal plugin marketplace. The single binary is this demo's one delivery
+unit, and the exercise has nowhere to host a marketplace.
+
+**Consequences.** One install path and one version, so the skills always match the binary; tests fail if a skill's
+name or `install.sh`'s uninstall list drifts. Updating a skill needs an mcp-hub release. A marketplace would let the
+platform team ship skill fixes independently and let Claude Code manage enable, disable and update. The builder and
+publisher skills pre-approve no tools, so edits, tag pushes and `gh pr create` all go through Claude Code's permission
+prompts.
+
+## 9. What we intentionally did not build
 
 | Not built | Why / what would replace it |
 |---|---|
-| Claude Code plugin marketplace | Skill + CLI covered the UX; plugins add a second distribution channel to govern |
+| Claude Code plugin marketplace | ADR 8: skills ship in the binary for now |
 | Real IdP / SSO | Local Ed25519 issuer with the same JWKS contract; see design.md "Identity tokens" |
 | Code signing / notarisation | sha256 against the catalogue only; production adds signed artifacts |
 | Devcontainers | Brief scoped to local macOS laptops |

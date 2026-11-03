@@ -61,8 +61,8 @@ builder (worktree) ── red → green commits ── verify.sh ── push onc
 | #22 | Harness: hook-enforced agent rules, `pr-ready.sh` merge gate, PR template | yes |
 | #25 | Disable needs a Claude Code restart; servers live in team repos | yes |
 | #23 | I "publish your own MCP server" UI | open at time of writing |
-| #24 | J skills to build and publish MCP servers | open at time of writing |
-| #26 | Installer picks the newest `vX.Y.Z` release, not GitHub's "latest" | open at time of writing |
+| #24 | J skills to build and publish MCP servers | yes |
+| #26 | Installer picks the newest `vX.Y.Z` release, not GitHub's "latest" | yes |
 | #27 | K Activity tab hides connection traffic; proxy passes upstream 405 through | open at time of writing |
 | #28 | M dev registry: try any local or remote server before publishing | open at time of writing |
 
@@ -151,6 +151,9 @@ connection pattern, concurrency, and what a hostile counterpart could send back.
 - **G:** the skill now lives in `internal/skillfiles` (`go:embed`), so it always matches the daemon version. A test fails
   if a second copy reappears. Review of #19 caught that Claude Code reads `CLAUDE_CONFIG_DIR`, not our `CLAUDE_HOME_DIR`;
   with it set, the banner would have said "installed" while Claude could not see the skill.
-- **I, J, K, M** (open at time of writing): publish UI; skills that build and publish a server from the template in the
-  team's own repo; Activity filtering + 405 pass-through; dev registry for any local or remote server. Each was built
-  test-first, with red → green commits named in its PR.
+- **J:** two embedded skills, `mcp-hub-build-server` (copy the template into the team's own repo, rename, tools
+  test-first, devtoken smoke test) and `mcp-hub-publish-server` (adapt the workflow, tag, catalogue PR). Tests pin the
+  facts each skill must state. Human testing mid-lane corrected two things: servers live in the team's own repo (only
+  the catalogue PR goes to the hub), and disable needs a restart.
+- **I, K, M** (open at time of writing): publish UI; Activity filtering + 405 pass-through; dev registry for any local
+  or remote server. Each was built test-first, with red → green commits named in its PR.

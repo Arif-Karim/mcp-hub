@@ -20,6 +20,10 @@
 | SAST with cross-function taint tracking (Go + TS) | CodeQL `security-extended` | PR CI, main, **weekly** |
 | Real install on macOS: package → `install.sh` → health → `search` → uninstall | `install.sh --local-artifact` | main only (`installer` job) |
 | Dependency updates (Go, npm, Actions) | Dependabot | weekly PRs, same gates |
+| Agent guard hook: blocked commands table test | `scripts/hooks/guard-bash_test.sh` | verify.sh |
+| Installer picks the newest `vX.Y.Z` release | `scripts/tests/install_version_test.sh` | verify.sh |
+| Merge gate: checks green, 0 code-scanning alerts on the PR ref, 0 bot comments, review-fixes comment posted | `scripts/pr-ready.sh <n>` | before every merge |
+| Branch protection on `main`: verify, mutation and both CodeQL analyses required; no force-push, enforced for admins | GitHub | every merge |
 | Release: tag must be on main; build job read-only, publish job runs no repo code | `release.yml` | on `v*` tag |
 
 ## Latest results
@@ -78,6 +82,8 @@ audit log showed `find_service`); see agentic-workflow.md.
 | Client credentials forwarded upstream | stripped; fresh hub JWT injected | `TestHubJWTInjectsFreshTokenAndStripsClientCredentials`, `TestAuthNoneSendsNoCredentials` |
 | Hub JWT over plaintext to a remote host | 502, upstream not called | `TestHubJWTNeverSentOverPlaintextToRemoteHost` |
 | Token alg confusion / `none` / wrong aud, iss, kid / expired / tampered | rejected | `TestVerifyRejectsAlgConfusionAndNone`, `TestVerifyRejectsWrongAudience`, `TestVerifyRejectsWrongIssuerAndKID`, `TestVerifyRejectsExpiredToken`, `TestVerifyRejectsTamperedPayload` (plus the example server's `hubauth` tests) |
+| Remote answers a notification with a chunked 202 and no content type (Context7, found hands-on) | passed through with the body dropped; other untyped bodies still blocked | `TestAcceptedWithoutContentTypeIsAllowedWhenChunked`, `TestAcceptedUntypedBodyIsDropped` |
+| Disabled server still listed by Claude Code (`/reload-plugins` does not remove) | proxy refuses the disabled id (404), so stale tools fail closed | e2e step 7 |
 | Signing key readable by others | daemon refuses to start | `TestInsecureKeyFileRejected` |
 | Audit leaking arguments | only method + tool name recorded | `TestAuditRecordsMethodAndToolButNotArguments` |
 | Invalid catalogue | startup refused, every problem listed | `TestValidateReportsEveryProblem`, `TestLoadCatalogue`, `TestSampleInvalidCatalogueIsRejected` |

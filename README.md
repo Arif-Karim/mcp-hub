@@ -152,7 +152,7 @@ More in [`evidence/verify.md`](evidence/verify.md#known-gaps) and [`evidence/des
 |---|---|
 | [intent](evidence/intent.md) | problem, users, assumptions, constraints, out of scope, success criteria |
 | [design](evidence/design.md) | architecture, data flow, identity tokens, security, path to production |
-| [decisions](evidence/decisions.md) | numbered ADRs and what we did not build |
+| [decisions](evidence/decisions.md) | 8 numbered ADRs and what we did not build |
 | [verify](evidence/verify.md) | checks, results, e2e, guarded failures, known gaps |
 | [operate](evidence/operate.md) | run, logs, failure modes, rollback, upgrades |
 | [agentic workflow](evidence/agentic-workflow.md) | how Claude Code agents built it, where the human intervened |

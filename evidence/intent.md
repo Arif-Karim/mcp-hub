@@ -28,7 +28,7 @@ tool call audited. Platform teams get a governed catalogue and a standard way to
 ## Out of scope
 Real SSO/IdP, real Artifactory, code signing/notarisation, devcontainers, Windows/Linux packaging,
 OAuth-based remote servers (e.g. Rovo — shown as *pending approval*), multi-user/central catalogue service.
-Claude Code plugin marketplace and a single gateway MCP entry (not built; see decisions.md §8).
+Claude Code plugin marketplace and a single gateway MCP entry (not built; see decisions.md §9).
 
 ## Success criteria
 1. `install.sh` on a clean Mac installs the binary + skill and opens the UI — no Go/Node needed.
