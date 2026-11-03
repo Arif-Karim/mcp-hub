@@ -19,6 +19,9 @@ func TestEmbeddedSkillIsValid(t *testing.T) {
 	if !strings.Contains(c, "/reload-plugins") {
 		t.Error("SKILL.md must tell users to run /reload-plugins")
 	}
+	if !strings.Contains(c, "Restart Claude Code to remove it") {
+		t.Error("SKILL.md must tell users a disabled server needs a Claude Code restart")
+	}
 	if strings.Contains(c, "run `/mcp`") {
 		t.Error("SKILL.md still uses the old /mcp wording")
 	}
