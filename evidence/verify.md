@@ -43,7 +43,7 @@ Taken from the PR descriptions (gremlins, timeout coefficient 20, mostly single-
 | `internal/daemon` | 90% (9 killed / 1 lived: a drain-timeout warning log) | PR #15 |
 | `internal/runner` | 86.2% (25 killed / 4 lived / 3 timed out; survivors are timing boundaries) | PR #15 (after review fixes, pre-rebase run; was 80.8%) |
 
-Total Go coverage over `internal/...`: **92.8%** (`verify.sh` on main after PR #15). UI: 71 Vitest tests in 9 files (`npm test`).
+Total Go coverage over `internal/...`: **92.5%** (`verify.sh` on main, 2026-11-03). UI: 84 Vitest tests in 10 files (`npm test`, same run).
 
 ## End-to-end test
 
