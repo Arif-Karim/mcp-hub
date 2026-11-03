@@ -91,7 +91,7 @@ async function toggle(item: CatalogueItem) {
     <ClaudeCallout v-if="skill?.installed" />
 
     <div class="toolbar">
-      <h2 id="catalogue-heading" class="sr-only">Catalogue</h2>
+      <h2 id="catalogue-heading" class="sr-only" tabindex="-1">Catalogue</h2>
       <label class="search">
         <span class="sr-only">Search servers</span>
         <input

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from './api'
 import type { Status } from './api/types'
 import { daemonHealth } from './lib/status'
@@ -10,15 +10,35 @@ import type { Tab } from './components/AppHeader.vue'
 import CatalogueView from './components/CatalogueView.vue'
 import PublishView from './components/PublishView.vue'
 import ToastStack from './components/ToastStack.vue'
-import { pathForTab, tabFromPath } from './lib/route'
+import { isForwardNav, pathForTab, tabFromPath, viewHeadingId, viewTitle } from './lib/route'
 
-const tab = ref<Tab>(tabFromPath(location.pathname))
-// Keep the URL in sync with the tab so /publish is linkable and Back works.
-watch(tab, (t) => {
+const initial = tabFromPath(location.pathname)
+// Normalise unknown or trailing-slash paths so the URL matches what is shown.
+if (location.pathname !== pathForTab(initial)) {
+  history.replaceState(null, '', pathForTab(initial) + location.search)
+}
+const tab = ref<Tab>(initial)
+document.title = viewTitle(initial)
+
+// Set by onPopState when Back/Forward changed the tab: the URL is already right and the
+// browser restores scroll, so we must not push or scroll to the top.
+let fromHistory = false
+
+// Keep the URL in sync with the tab so /publish is linkable and Back works; announce the new view.
+watch(tab, async (t) => {
   if (location.pathname !== pathForTab(t)) history.pushState(null, '', pathForTab(t))
-  window.scrollTo?.(0, 0)
+  if (!fromHistory) window.scrollTo?.(0, 0)
+  fromHistory = false
+  document.title = viewTitle(t)
+  await nextTick()
+  document.getElementById(viewHeadingId(t))?.focus()
 })
-const onPopState = () => (tab.value = tabFromPath(location.pathname))
+const onPopState = (e: PopStateEvent) => {
+  const next = tabFromPath(location.pathname)
+  if (next === tab.value) return
+  fromHistory = !isForwardNav(e)
+  tab.value = next
+}
 const status = ref<Status>()
 const health = ref<DaemonHealth>('loading')
 

@@ -21,24 +21,24 @@ export const kinds = [
 export const steps: { title: string; body: string; code?: string }[] = [
   {
     title: 'Build from the template',
-    body: 'Copy the reference template — its README is the standard. Replace the tools in internal/directory, keep the rest, and use the verified sub (the engineer’s identity) when you call your own APIs.',
+    body: "Copy the reference template into your team's own repo — your server lives there, not in mcp-hub. Its README is the standard. Replace the tools in internal/directory, keep the rest, and use the verified sub (the engineer’s identity) when you call your own APIs.",
   },
   {
     title: 'Release it',
-    body: 'One .tar.gz per platform with an executable named mcp-server at the archive root, plus checksums.txt (sha256). The template’s workflow builds these and prints a ready-to-paste artifacts: snippet.',
+    body: 'One .tar.gz per platform with an executable named mcp-server at the archive root, plus checksums.txt (sha256). Copy mcp-hub’s .github/workflows/publish-mcp-server.yml into your repo and adapt it (tag prefix, paths, archive name); it builds these and prints a ready-to-paste artifacts: snippet.',
   },
   {
     title: 'Open a catalogue PR',
-    body: 'Add your entry to internal/catalogue/default.yaml with',
+    body: 'The only change in mcp-hub: a PR adding your entry to internal/catalogue/default.yaml with',
     code: 'approval: pending',
   },
   {
     title: 'Platform team review',
-    body: 'Platform team checks ownership, an honest data classification, that the tools match what the server does, the template standard, and that the checksums match the release.',
+    body: 'Platform team checks ownership, an honest data classification, that the tools match what the server does, the template standard, and that the checksums match the release. In this demo that approval is PR review; in production, CODEOWNERS would require it.',
   },
   {
     title: 'Approved and live',
-    body: 'The platform team flips the entry to approved, and engineers can enable it from this UI or from Claude Code.',
+    body: 'The reviewer sets the entry to approved. Once the next mcp-hub release ships with it, engineers can enable it from this UI or from Claude Code.',
   },
 ]
 
@@ -51,7 +51,7 @@ export const lifecycle: { state: Approval; seen: string; who: string }[] = [
   { state: 'approved', seen: 'Engineers can enable it.', who: 'Platform team, after review' },
   {
     state: 'revoked',
-    seen: `“${blockedReason.revoked}” — enable is refused; enabled copies are disabled when the daemon restarts.`,
+    seen: `“${blockedReason.revoked}” — enable is refused; after the next mcp-hub release, enabled copies are disabled when the daemon restarts.`,
     who: 'Platform team (incident, end of life)',
   },
 ]
