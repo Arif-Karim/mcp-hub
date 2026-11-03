@@ -1,6 +1,6 @@
 ---
 name: mcp-hub-build-server
-description: Build a new MCP server for mcp-hub from the company template. Use when the user wants to build, create, write, scaffold or start an MCP server for their team's service or API, or turn an internal API into MCP tools that Claude can call, so it can later be published to the mcp-hub catalogue.
+description: Build a new MCP server for mcp-hub from the company template. Use when the user wants to build, create, write, scaffold or create a new MCP server for their team's service or API, or turn an internal API into MCP tools that Claude can call, so it can later be published to the mcp-hub catalogue.
 ---
 
 # Build an MCP server for mcp-hub
@@ -39,6 +39,9 @@ Layout: `cmd/mcp-server` (entrypoint, SIGTERM), `cmd/devtoken` (local test issue
 
 - `go.mod` `module` line and every import of `github.com/Arif-Karim/mcp-hub/examples/mcp-server-template`.
 - `Name` (and reset `Version` to `0.1.0`) in the tools package; `Name` is what MCP clients see.
+- The `GITHUB_REPOSITORY` fallback in `scripts/package.sh` (`repo="${GITHUB_REPOSITORY:-Arif-Karim/mcp-hub}"`):
+  set it to the team's `<org>/<repo>`, or the release URLs it prints point at the hub repo.
+- The `service-directory` mentions in doc comments (`cmd/mcp-server/main.go`, the tools package, `package.sh`).
 - `name=` in `scripts/package.sh`: it names the archives and the release tag (`<id>-v<version>`), so use the
   catalogue id. Keep the executable inside the archive named `mcp-server`; the hub execs that fixed name.
 - The default `-aud` in `cmd/devtoken` and the `service-directory` audience in tests: use the catalogue id.
@@ -72,7 +75,8 @@ From the server directory:
 - `go test -race ./...`
 - the linter: `golangci-lint run ./...` (the hub repo pins it in `tools/go.mod`; pin it in the team's repo the
   same way, e.g. a `tools/go.mod` used with `go tool -modfile=tools/go.mod golangci-lint run ./...`)
-- `scripts/package.sh 0.1.0` builds `dist/` and prints the catalogue `artifacts:` snippet.
+- `scripts/package.sh 0.1.0` builds `dist/` and prints an `artifacts:` snippet. That local snippet is for checking only;
+  the catalogue entry must use the snippet from the real release (see `mcp-hub-publish-server`).
 
 ## 7. Try it locally
 

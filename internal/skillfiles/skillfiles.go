@@ -108,7 +108,9 @@ func SkillPath(claudeDir, name string) string {
 // Path is where the main mcp-hub skill lives under claudeDir.
 func Path(claudeDir string) string { return SkillPath(claudeDir, mainSkill) }
 
-// Install writes every embedded skill under SkillsDir(claudeDir).
+// Install writes every embedded skill under SkillsDir(claudeDir). Each file
+// is replaced atomically, but the set is not: a failure part-way leaves a mix,
+// which Status reports as not installed or stale, and a retry fixes it.
 func Install(claudeDir string) error {
 	for _, s := range skills {
 		if err := installOne(SkillPath(claudeDir, s.Name), s.Content); err != nil {

@@ -1,6 +1,6 @@
 ---
 name: mcp-hub
-description: Find, enable and disable approved MCP servers from the company's governed mcp-hub catalogue. Use when the user asks to find, get, install, add or connect an MCP server or tool, wants to connect Claude to an internal system (service directory, Jira, payments, docs, ...), asks what MCP servers are available or which ones they have enabled, or wants to remove/disable one.
+description: Find, enable and disable approved MCP servers from the company's governed mcp-hub catalogue. Use when the user asks to find, get, install, add or connect an (existing, approved) MCP server or tool, wants to connect Claude to an internal system (service directory, Jira, payments, docs, ...), asks what MCP servers are available or which ones they have enabled, or wants to remove/disable one. To build or publish your own server, use mcp-hub-build-server or mcp-hub-publish-server instead.
 allowed-tools: Bash(mcp-hub search:*), Bash(mcp-hub info:*), Bash(mcp-hub status:*)
 ---
 
@@ -42,8 +42,9 @@ Run `mcp-hub status` and report the enabled servers (or `mcp-hub search --json` 
 
 ## Disable
 
-Confirm first, then `mcp-hub disable <id> --json`, then tell them to restart Claude Code to unload the server:
-`/reload-plugins` loads newly enabled servers but does not remove disabled ones.
+Confirm first, then `mcp-hub disable <id> --json`, then tell them: Restart Claude Code to remove it
+(`/reload-plugins` adds servers but does not remove them; until the restart its tools fail because the hub no
+longer routes them).
 
 ## Errors (exit code non-zero; `--json` prints `{"error":{"code","message"}}`)
 

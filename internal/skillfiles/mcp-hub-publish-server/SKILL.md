@@ -36,7 +36,9 @@ All of this happens in the team's repo.
 1. Bump `Version` in the tools package and get it merged to `main`. The build fails if it does not match the tag.
 2. Tag the merge commit on `main` as `<id>-v<semver>` (e.g. `team-billing-v0.1.0`). **Ask the user before
    pushing any tag**, and show the exact `git tag` / `git push origin <tag>` commands. The build refuses
-   commits that are not on `main`. (Alternative: run the workflow manually on `main` with an untagged version.)
+   commits that are not on `main`, so the team repo's default branch must be `main`.
+   Alternative: run the workflow manually on `main` with an untagged version. That also creates a tag and a
+   release, so **ask first** in the same way and show `gh workflow run publish-mcp-server.yml -f version=<v>`.
 3. When the release exists, copy the `artifacts:` snippet from its release notes
    (`gh release view <id>-v<semver>`), or build it from the release's `checksums.txt`.
 
@@ -63,7 +65,10 @@ Add the entry to `internal/catalogue/default.yaml` in the hub repo (https://gith
         description: What the tool does.
     docsUrl: https://github.com/<org>/<repo>      # https only
     artifacts:                  # pasted from the release notes
-      darwin-arm64: { url: ..., sha256: "..." }
+      darwin-arm64:
+        url: https://github.com/<org>/<repo>/releases/download/my-service-v0.1.0/my-service_darwin_arm64.tar.gz
+        sha256: "<from the release notes or checksums.txt>"
+      # darwin-amd64, linux-amd64 likewise
 ```
 
 - Choose `classification` **with the user, honestly**: the most sensitive data any tool can return. Do not
@@ -77,8 +82,9 @@ Add the entry to `internal/catalogue/default.yaml` in the hub repo (https://gith
 
 ## 4. Open the catalogue PR
 
-Work on a branch of the hub repo. **Ask the user before opening the PR**, showing the title and body, then
-`gh pr create --repo Arif-Karim/mcp-hub --base main`. The body should say what the server does, who owns it,
+Unless the user has write access to `Arif-Karim/mcp-hub`, fork it (`gh repo fork Arif-Karim/mcp-hub --clone`).
+Branch, commit the entry, then **ask the user before pushing the branch** to the fork. **Ask the user before
+opening the PR**, showing the title and body, then `gh pr create --repo Arif-Karim/mcp-hub --base main`. The body should say what the server does, who owns it,
 the classification and why, and link the release.
 
 ## 5. What happens next (tell the user)

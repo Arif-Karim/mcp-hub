@@ -29,7 +29,8 @@ the `mcp-hub` skill, and they must stay in step with the template, `docs/publish
 **Decision.** All three live in `internal/skillfiles/<name>/SKILL.md`, embedded with `go:embed`, and
 `mcp-hub install-skill` / `install.sh` / the UI write every one to `~/.claude/skills/<name>/`. Status is
 "installed and up to date" only when all three are present and current. In production we would package them as a
-Claude Code plugin in an internal plugin marketplace instead.
+Claude Code plugin in an internal plugin marketplace instead. We don't do that today because the single binary is
+the demo's one delivery unit, and an internal marketplace is infrastructure the exercise has no place to host.
 
 **Consequences.**
 - One install path and one version: the skills always match the binary, and a test fails if a skill's frontmatter
@@ -38,3 +39,5 @@ Claude Code plugin in an internal plugin marketplace instead.
   independently, scope them per team, and let Claude Code manage enable/disable/update.
 - The builder and publisher skills pre-approve no tools, so file edits, `git push` of tags and `gh pr create` all go
   through Claude Code's normal permission prompts, and the skills also ask the user first.
+- A skill directory dropped in a later release is not cleaned up by `install-skill` (only `install.sh --uninstall`
+  removes skills, by name). Fine while the set only grows; a plugin would handle removal for us.
