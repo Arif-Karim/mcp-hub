@@ -4,6 +4,7 @@ import type { ApiClient } from '../api/client'
 import type { CatalogueItem, Kind, SkillStatus } from '../api/types'
 import { errorMessage } from '../lib/errors'
 import { filterItems } from '../lib/filter'
+import { followLink } from '../lib/route'
 import { pushToast } from '../lib/toast'
 import ClaudeCallout from './ClaudeCallout.vue'
 import DetailDrawer from './DetailDrawer.vue'
@@ -90,7 +91,7 @@ async function toggle(item: CatalogueItem) {
     <ClaudeCallout v-if="skill?.installed" />
 
     <div class="toolbar">
-      <h2 id="catalogue-heading" class="sr-only">Catalogue</h2>
+      <h2 id="catalogue-heading" class="sr-only" tabindex="-1">Catalogue</h2>
       <label class="search">
         <span class="sr-only">Search servers</span>
         <input
@@ -142,6 +143,13 @@ async function toggle(item: CatalogueItem) {
         @toggle="toggle"
         @open="openId = $event.id"
       />
+      <aside class="card card--invite" data-test="invite-card" aria-labelledby="invite-heading">
+        <h3 id="invite-heading" class="card__title">Your service here</h3>
+        <p class="card__desc">Build an MCP server for your team’s service and publish it to this catalogue.</p>
+        <footer class="card__foot">
+          <a href="/publish" class="btn btn--outline" @click="followLink($event, '/publish')">How to publish</a>
+        </footer>
+      </aside>
     </div>
 
     <DetailDrawer
