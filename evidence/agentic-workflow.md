@@ -192,5 +192,7 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   audit file still records everything.
 - The same testing showed `deepwiki` `GET` as 502. `curl` showed DeepWiki answers the optional GET SSE stream with
   `405 Method Not Allowed`, `text/plain` (allowed by the MCP spec), and our content-type guard turned it into 502. The
-  proxy now passes 405 through with the body dropped (same path as the untyped 202); the content-type rule is unchanged
-  for every other status (red → green in `security_test.go`).
+  proxy now passes 405 through with the body dropped (same path as the untyped 202). Review and an assessor's bare
+  `curl -X POST` showed the same pattern for 404 (expired session, so the client must re-initialize) and go-sdk's 400/406
+  `text/plain`. Any upstream 4xx except 401/403 with an untyped body now keeps its status with the body dropped. The
+  content-type rule is unchanged for 2xx, 3xx and 5xx (table test, red → green in `security_test.go`).

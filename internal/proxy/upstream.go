@@ -53,11 +53,13 @@ func (h *handler) reverseProxy(id string, target *url.URL, rest, authz string, s
 				dropBody(id, resp)
 				return nil
 			}
-			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
-				// MCP signals with these statuses: 404 = session expired, so the
+			if resp.StatusCode >= 400 && resp.StatusCode < 500 && !allowedContentType(resp) {
+				// MCP signals with client errors: 404 = session expired, so the
 				// client re-initializes; 405 = optional GET SSE stream refused
-				// (DeepWiki, as text/plain). Pass the status through so the client
-				// can react, but never the untyped body.
+				// (DeepWiki, as text/plain); 400/406 = bad request or missing
+				// Accept (go-sdk, as text/plain). Pass the status through so the
+				// client can react, but never the untyped body. (401/403 were
+				// handled above.)
 				dropBody(id, resp)
 				return nil
 			}
