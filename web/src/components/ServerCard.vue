@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { CatalogueItem } from '../api/types'
 import { blockedReason, cap, statusLabel } from '../lib/labels'
+import { followLink } from '../lib/route'
 
 const props = defineProps<{ item: CatalogueItem; busy?: boolean; error?: string }>()
 const emit = defineEmits<{ toggle: [item: CatalogueItem]; open: [item: CatalogueItem] }>()
@@ -49,5 +50,9 @@ const label = computed(() => {
       </button>
       <span v-if="reason" class="card__reason" data-test="reason">{{ reason }}</span>
     </footer>
+    <p v-if="item.approval === 'pending'" class="card__hint" data-test="pending-hint">
+      Another team is building this.
+      <a href="/publish" @click="followLink($event, '/publish')">You can publish yours too</a>
+    </p>
   </article>
 </template>

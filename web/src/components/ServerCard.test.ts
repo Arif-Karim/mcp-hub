@@ -69,4 +69,13 @@ describe('ServerCard', () => {
     await w.get('[data-test=open]').trigger('click')
     expect(w.emitted('open')).toHaveLength(1)
   })
+
+  it('invites teams to publish on pending entries only', () => {
+    const hint = mount(ServerCard, { props: { item: item('jira-rovo') } }).get('[data-test=pending-hint]')
+    expect(hint.text()).toContain('Another team is building this')
+    expect(hint.get('a').attributes('href')).toBe('/publish')
+    for (const id of ['deepwiki', 'payments-sandbox']) {
+      expect(mount(ServerCard, { props: { item: item(id) } }).find('[data-test=pending-hint]').exists()).toBe(false)
+    }
+  })
 })

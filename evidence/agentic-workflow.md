@@ -60,11 +60,11 @@ builder (worktree) ── red → green commits ── verify.sh ── push onc
 | #21 | Publishing guide for MCP server authors (`docs/publishing.md`) | yes |
 | #22 | Harness: hook-enforced agent rules, `pr-ready.sh` merge gate, PR template | yes |
 | #25 | Disable needs a Claude Code restart; servers live in team repos | yes |
-| #23 | I "publish your own MCP server" UI | open at time of writing |
+| #23 | I "publish your own MCP server" UI | yes |
 | #24 | J skills to build and publish MCP servers | yes |
 | #26 | Installer picks the newest `vX.Y.Z` release, not GitHub's "latest" | yes |
 | #27 | K Activity tab hides connection traffic; proxy passes upstream 405 through | open at time of writing |
-| #28 | M dev registry: try any local or remote server before publishing | open at time of writing |
+| #28 | M dev registry: try any local or remote server before publishing | yes |
 
 ## Representative steering prompts (excerpts)
 
@@ -151,9 +151,26 @@ connection pattern, concurrency, and what a hostile counterpart could send back.
 - **G:** the skill now lives in `internal/skillfiles` (`go:embed`), so it always matches the daemon version. A test fails
   if a second copy reappears. Review of #19 caught that Claude Code reads `CLAUDE_CONFIG_DIR`, not our `CLAUDE_HOME_DIR`;
   with it set, the banner would have said "installed" while Claude could not see the skill.
-- **J:** two embedded skills, `mcp-hub-build-server` (copy the template into the team's own repo, rename, tools
-  test-first, devtoken smoke test) and `mcp-hub-publish-server` (adapt the workflow, tag, catalogue PR). Tests pin the
-  facts each skill must state. Human testing mid-lane corrected two things: servers live in the team's own repo (only
-  the catalogue PR goes to the hub), and disable needs a restart.
-- **I, K, M** (open at time of writing): publish UI; Activity filtering + 405 pass-through; dev registry for any local
-  or remote server. Each was built test-first, with red → green commits named in its PR.
+- **K, M:** Activity filtering + 405 pass-through (#27, open at time of writing); dev registry for any local or remote
+  server (#28, merged). Each was built test-first, with red → green commits named in its PR.
+
+### Lane J (builder and publisher skills)
+- This lane came from the human's steer that engineers should just talk to Claude Code to build and publish an MCP
+  server, not read a guide: two new embedded skills, `mcp-hub-build-server` (template copy, rename, tools test-first,
+  devtoken smoke test) and `mcp-hub-publish-server` (workflow adaptation, tag, catalogue PR), both written against
+  `docs/publishing.md` and the template README; tests pin the facts each must state.
+- `skillfiles` now embeds `*/SKILL.md` and installs all of them; `Status` needs every skill present and current
+  (red → green), `install-skill` lists each path, and `install.sh --uninstall` plus the macOS installer CI job cover all three.
+- Two corrections from the human's testing mid-lane: teams keep their server and release workflow in their own repo
+  (only the catalogue PR goes to the hub), and `/reload-plugins` loads newly enabled servers but does not remove
+  disabled ones, so disable now says "restart Claude Code" (skill + CLI, red → green).
+
+### Lane I (publish your own MCP server, in the UI)
+- This lane came from the human's product steer, not the original plan: the hub should encourage engineering teams to
+  build MCP servers for their own services, but the UI only served people consuming them. It adds a "Publish your
+  server" header link, a `/publish` guide condensed from `docs/publishing.md` (static TS, no markdown or `v-html`), a
+  "Your service here" invite card at the end of the catalogue grid, and a "publish yours too" hint on pending entries.
+- UI only, no new deps or API changes: routing is a small `lib/route.ts` on `history.pushState` (the daemon's SPA fallback
+  already serves `index.html` for `/publish`). Tests were committed red then green, covering the header link, the 5 steps,
+  `rel="noopener noreferrer"` on external links, Copy success, missing-clipboard and rejected-clipboard fallbacks via an
+  `aria-live` status, the invite card, and the hint on pending entries only.
