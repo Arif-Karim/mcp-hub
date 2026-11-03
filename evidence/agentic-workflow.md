@@ -189,3 +189,6 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   `docs/publishing.md` and the template README; tests pin the facts each must state.
 - `skillfiles` now embeds `*/SKILL.md` and installs all of them; `Status` needs every skill present and current
   (red → green), `install-skill` lists each path, and `install.sh --uninstall` plus the macOS installer CI job cover all three.
+- Two corrections from the human's testing mid-lane: teams keep their server and release workflow in their own repo
+  (only the catalogue PR goes to the hub), and `/reload-plugins` loads newly enabled servers but does not remove
+  disabled ones, so disable now says "restart Claude Code" (skill + CLI, red → green).
