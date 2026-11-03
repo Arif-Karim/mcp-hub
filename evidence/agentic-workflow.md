@@ -183,3 +183,14 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   `daemon.Config.ClaudeDir` (red → green). Review of #19 caught that Claude Code reads `CLAUDE_CONFIG_DIR`, not our
   `CLAUDE_HOME_DIR`: with it set, the banner would have said "installed" while Claude still could not see the skill, which
   is the very failure this lane fixes. Now resolved in the same order in Go and `install.sh` and forwarded to launchd.
+
+### Lane J (builder and publisher skills)
+- This lane came from the human's steer that engineers should just talk to Claude Code to build and publish an MCP
+  server, not read a guide: two new embedded skills, `mcp-hub-build-server` (template copy, rename, tools test-first,
+  devtoken smoke test) and `mcp-hub-publish-server` (workflow adaptation, tag, catalogue PR), both written against
+  `docs/publishing.md` and the template README; tests pin the facts each must state.
+- `skillfiles` now embeds `*/SKILL.md` and installs all of them; `Status` needs every skill present and current
+  (red → green), `install-skill` lists each path, and `install.sh --uninstall` plus the macOS installer CI job cover all three.
+- Two corrections from the human's testing mid-lane: teams keep their server and release workflow in their own repo
+  (only the catalogue PR goes to the hub), and `/reload-plugins` loads newly enabled servers but does not remove
+  disabled ones, so disable now says "restart Claude Code" (skill + CLI, red → green).

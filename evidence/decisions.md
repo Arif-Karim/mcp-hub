@@ -19,3 +19,25 @@ modify or remove an entry when both the marker and an unchanged ledger hash say 
 - Coupled to the file format: if Claude Code moves user-scope servers elsewhere we must follow. The surface we touch is
   tiny (one top-level key) and everything else is passed through as raw JSON.
 - No cross-process lock with Claude Code is possible; see design.md "Claude config safety".
+
+## Builder and publisher skills ship inside the binary today; in production, package mcp-hub's skills as a Claude Code plugin in an internal plugin marketplace
+
+**Context.** Engineers should be able to ask Claude Code to "build an MCP server for my team's service" or "publish
+my MCP server to the hub". That needs two more skills (`mcp-hub-build-server`, `mcp-hub-publish-server`) next to
+the `mcp-hub` skill, and they must stay in step with the template, `docs/publishing.md` and the daemon.
+
+**Decision.** All three live in `internal/skillfiles/<name>/SKILL.md`, embedded with `go:embed`, and
+`mcp-hub install-skill` / `install.sh` / the UI write every one to `~/.claude/skills/<name>/`. Status is
+"installed and up to date" only when all three are present and current. In production we would package them as a
+Claude Code plugin in an internal plugin marketplace instead. We don't do that today because the single binary is
+the demo's one delivery unit, and an internal marketplace is infrastructure the exercise has no place to host.
+
+**Consequences.**
+- One install path and one version: the skills always match the binary, and a test fails if a skill's frontmatter
+  name drifts from its directory or `install.sh`'s uninstall list drifts from the embedded set.
+- Updating a skill needs an mcp-hub release; a plugin marketplace would let the platform team ship skill fixes
+  independently, scope them per team, and let Claude Code manage enable/disable/update.
+- The builder and publisher skills pre-approve no tools, so file edits, `git push` of tags and `gh pr create` all go
+  through Claude Code's normal permission prompts, and the skills also ask the user first.
+- A skill directory dropped in a later release is not cleaned up by `install-skill` (only `install.sh --uninstall`
+  removes skills, by name). Fine while the set only grows; a plugin would handle removal for us.

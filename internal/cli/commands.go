@@ -330,7 +330,11 @@ func installSkill(_ context.Context, env Env, _ opts) error {
 	if err := skillfiles.Install(dir); err != nil {
 		return fmt.Errorf("installing skill: %w", err)
 	}
-	fmt.Fprintf(env.Stdout, "Installed the mcp-hub Claude Code skill to %s.\n", skillfiles.Path(dir))
-	fmt.Fprintln(env.Stdout, "Restart Claude Code or run /reload-plugins to load it.")
+	skills := skillfiles.Skills()
+	fmt.Fprintf(env.Stdout, "Installed %d mcp-hub Claude Code skills to %s:\n", len(skills), skillfiles.SkillsDir(dir))
+	for _, s := range skills {
+		fmt.Fprintf(env.Stdout, "  %s  %s\n", s.Name, skillfiles.SkillPath(dir, s.Name))
+	}
+	fmt.Fprintln(env.Stdout, "Restart Claude Code or run /reload-plugins to load them.")
 	return nil
 }
