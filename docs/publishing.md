@@ -21,9 +21,10 @@ There are two kinds of entry:
 
 Your server lives in **your team's own repository**: copy
 [`examples/mcp-server-template`](../examples/mcp-server-template) into it, together
-with the publish workflow. Only the catalogue entry (step 3) comes to the hub
-repository. Its
-README is **the standard**:
+with the publish workflow
+[`.github/workflows/publish-mcp-server.yml`](../.github/workflows/publish-mcp-server.yml)
+(it lives outside the template directory). Only the catalogue entry (step 3) comes to
+the hub repository. The template's README is **the standard**:
 
 - streamable HTTP at `/mcp`
 - bind 127.0.0.1 only
