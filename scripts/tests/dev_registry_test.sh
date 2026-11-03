@@ -52,6 +52,34 @@ reject "cmd/mcp-server" --src "$tmp" --id leave-balance
 reject "--id" --src "$tmp/leave-balance"
 reject "unknown argument" --bogus
 
+# 3. Relative --src resolves against the caller's cwd; re-running over our own output works.
+if (cd "$tmp" && "$root/scripts/dev-registry.sh" --src leave-balance --id leave-balance >"$tmp/log" 2>&1) \
+  && (cd "$tmp" && "$root/scripts/dev-registry.sh" --src ./leave-balance --id leave-balance >"$tmp/log" 2>&1); then
+  [[ -f "$tmp/out/leave-balance.tar.gz" ]] || die "relative --src: no tarball"
+else
+  cat "$tmp/log"; die "relative --src / re-run failed"
+fi
+
+# 4. A run that fails validation keeps the previous catalogue (Parse rejects url credentials).
+if scripts/dev-registry.sh --remote cf-docs https://user:pw@docs.example.com/mcp >"$tmp/log" 2>&1; then
+  die "credentialed remote url accepted"
+fi
+[[ -f "$tmp/out/catalogue.yaml" && -f "$tmp/out/leave-balance.tar.gz" ]] || die "failed run destroyed the previous output"
+
+# 5. The output dir is only ever deleted when it holds the script's marker.
+mkdir -p "$tmp/precious" && echo keep >"$tmp/precious/file"
+if DEV_REGISTRY_OUT="$tmp/precious" scripts/dev-registry.sh --remote cf-docs https://docs.example.com/mcp >"$tmp/log" 2>&1; then
+  die "wrote into a directory it did not create"
+fi
+[[ "$(cat "$tmp/precious/file" 2>/dev/null)" == keep ]] || die "deleted a directory it did not create"
+grep -q "refusing" "$tmp/log" || die "no clear refusal message: $(cat "$tmp/log")"
+mkdir -p "$tmp/home"
+if HOME="$tmp/home" DEV_REGISTRY_OUT="$tmp/home" scripts/dev-registry.sh --remote cf-docs https://docs.example.com/mcp >"$tmp/log" 2>&1; then
+  die "accepted \$HOME as the output dir"
+fi
+[[ -d "$tmp/home" && ! -e "$tmp/home/catalogue.yaml" ]] || die "touched \$HOME"
+if DEV_REGISTRY_OUT="$root" scripts/dev-registry.sh --help >/dev/null 2>&1; then :; fi # --help never touches disk
+
 cd "$root"
 [[ "$fail" == 0 ]] && echo "dev_registry_test: ok"
 exit "$fail"
