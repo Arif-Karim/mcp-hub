@@ -89,13 +89,27 @@ sha256_of() {
   else sha256sum "$1" | awk '{print $1}'; fi
 }
 
+# Reads GitHub's /releases JSON on stdin and prints the first stable mcp-hub tag: exactly vX.Y.Z.
+# Not /releases/latest: this repo also publishes service-directory-v* releases, which can be "latest".
+# Pre-release (v1.2.0-rc.1) and malformed (v1.2.3.4) tags are skipped, so the default install is the
+# newest stable release; pass --version to install a pre-release. /releases is ordered by creation
+# date, not semver, so a v0.1.2 hotfix published after v0.2.0 would win (same as /releases/latest).
+# No jq (plain macOS). Split on , { } so it works on pretty-printed and minified JSON; keys inside
+# release notes are JSON-escaped (\"tag_name\") and never match the anchored pattern. awk reads all
+# input (no early exit) so nothing upstream gets SIGPIPE under pipefail.
+pick_hub_version() {
+  tr ',{}' '\n\n\n' \
+    | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' \
+    | awk 'NR == 1'
+}
+
 resolve_version() {
   if [[ -n "$VERSION" ]]; then
     :
   else
     log "looking up the latest release of ${REPO}"
-    VERSION="$(curl -fsSL --max-time 20 "https://api.github.com/repos/${REPO}/releases/latest" \
-      | sed -n 's/^ *"tag_name": *"\(v[^"]*\)".*/\1/p' | head -n 1)" \
+    VERSION="$(curl -fsSL --max-time 20 "https://api.github.com/repos/${REPO}/releases?per_page=100" \
+      | pick_hub_version)" \
       || die "could not query GitHub releases for ${REPO}"
     [[ -n "$VERSION" ]] || die "no v* release found for ${REPO}; use --local-artifact <dir> to install a local build"
   fi
@@ -341,4 +355,12 @@ main() {
 }
 
 # Everything runs from main() so a truncated `curl | bash` download cannot execute a partial script.
+# MCP_HUB_INSTALL_SOURCE_ONLY=1 lets tests source the functions without installing anything. Sourcing
+# runs no installer step (no trap, temp dir or downloads: those are in main), but it does change the
+# caller's shell: it applies `set -euo pipefail` and defines the globals and functions above.
+# `return` only works when sourced; if the variable leaks into a real run (executed, or `curl | bash`,
+# where BASH_SOURCE is empty so it cannot be used to detect sourcing) fail loudly, not silently.
+if [[ -n "${MCP_HUB_INSTALL_SOURCE_ONLY:-}" ]]; then
+  return 0 2>/dev/null || die "MCP_HUB_INSTALL_SOURCE_ONLY is set: nothing installed (unset it and re-run)"
+fi
 main "$@"

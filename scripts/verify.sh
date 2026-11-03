@@ -25,6 +25,9 @@ awk -v t="$total" -v m="$COVERAGE_MIN" 'BEGIN { exit (t+0 >= m+0) ? 0 : 1 }' \
 step "harness hooks: guard table test"
 scripts/hooks/guard-bash_test.sh
 
+step "install.sh: picks the newest vX.Y.Z release"
+scripts/tests/install_version_test.sh
+
 step "govulncheck"
 tool govulncheck ./...
 
