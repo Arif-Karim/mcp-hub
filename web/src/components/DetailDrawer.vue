@@ -113,7 +113,8 @@ async function copy(text: string, what: string) {
               </dd>
             </template>
           </dl>
-          <p class="note">Run <code>/reload-plugins</code> in Claude Code (or restart it) to load the new server.</p>
+          <p class="note">Run <code>/reload-plugins</code> in Claude Code (or restart it) to load the new server.
+            After disabling, restart Claude Code to remove it (<code>/reload-plugins</code> doesn't remove servers).</p>
         </section>
 
         <h3>Authentication</h3>

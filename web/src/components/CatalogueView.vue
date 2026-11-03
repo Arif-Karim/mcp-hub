@@ -71,7 +71,7 @@ async function toggle(item: CatalogueItem) {
     items.value = items.value.map((i) => (i.id === updated.id ? updated : i))
     pushToast(
       'success',
-      enabling ? `${updated.name} enabled as ${updated.state.configName}` : `${updated.name} disabled`,
+      enabling ? `${updated.name} enabled as ${updated.state.configName}` : `${updated.name} disabled — restart Claude Code to remove it`,
     )
     emit('changed')
   } catch (e) {
