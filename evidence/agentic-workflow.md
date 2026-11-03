@@ -183,3 +183,14 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   `daemon.Config.ClaudeDir` (red → green). Review of #19 caught that Claude Code reads `CLAUDE_CONFIG_DIR`, not our
   `CLAUDE_HOME_DIR`: with it set, the banner would have said "installed" while Claude still could not see the skill, which
   is the very failure this lane fixes. Now resolved in the same order in Go and `install.sh` and forwarded to launchd.
+
+### Lane K (Activity tab: tool calls vs connection traffic; DeepWiki GET 502)
+- Found in the human's hands-on testing: after `/mcp`, with no tools called, the Activity tab filled with what looked like
+  tool calls. They were Claude Code's connection handshake (`initialize`, `notifications/initialized`, `tools/list`,
+  `resources/list`, `prompts/list`, SSE `GET`). The tab now shows only `tools/call` by default, with a "Show connection
+  activity (handshake, listing, streams)" toggle and friendly labels ("Connected", "Listed tools", "Event stream"). The
+  audit file still records everything.
+- The same testing showed `deepwiki` `GET` as 502. `curl` showed DeepWiki answers the optional GET SSE stream with
+  `405 Method Not Allowed`, `text/plain` (allowed by the MCP spec), and our content-type guard turned it into 502. The
+  proxy now passes 405 through with the body dropped (same path as the untyped 202); the content-type rule is unchanged
+  for every other status (red → green in `security_test.go`).
