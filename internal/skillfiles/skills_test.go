@@ -88,6 +88,11 @@ func TestSkillsStateTheEssentials(t *testing.T) {
 			"Ask the user", "docs/publishing.md",
 		},
 	}
+	// Teams keep their server in their own repo; only the catalogue PR goes to the hub repo.
+	cases["mcp-hub-build-server"] = append(cases["mcp-hub-build-server"], "your team's own repo")
+	cases["mcp-hub-publish-server"] = append(cases["mcp-hub-publish-server"], "your team's own repo")
+	// /reload-plugins loads new servers but does not remove disabled ones.
+	cases["mcp-hub"] = append(cases["mcp-hub"], "restart Claude Code to unload")
 	for name, want := range cases {
 		c := skill(t, name)
 		for _, w := range want {
