@@ -89,13 +89,23 @@ sha256_of() {
   else sha256sum "$1" | awk '{print $1}'; fi
 }
 
+# Reads GitHub's /releases JSON (newest first) on stdin and prints the first mcp-hub tag (vX.Y.Z...).
+# Not /releases/latest: this repo also publishes service-directory-v* releases, which can be "latest".
+# No jq (plain macOS). Split on , { } so it works on pretty-printed and minified JSON; awk reads all
+# input (no early exit) so nothing upstream gets SIGPIPE under pipefail.
+pick_hub_version() {
+  tr ',{}' '\n\n\n' \
+    | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*[^"]*\)".*/\1/p' \
+    | awk 'NR == 1'
+}
+
 resolve_version() {
   if [[ -n "$VERSION" ]]; then
     :
   else
     log "looking up the latest release of ${REPO}"
-    VERSION="$(curl -fsSL --max-time 20 "https://api.github.com/repos/${REPO}/releases/latest" \
-      | sed -n 's/^ *"tag_name": *"\(v[^"]*\)".*/\1/p' | head -n 1)" \
+    VERSION="$(curl -fsSL --max-time 20 "https://api.github.com/repos/${REPO}/releases?per_page=30" \
+      | pick_hub_version)" \
       || die "could not query GitHub releases for ${REPO}"
     [[ -n "$VERSION" ]] || die "no v* release found for ${REPO}; use --local-artifact <dir> to install a local build"
   fi
@@ -341,4 +351,5 @@ main() {
 }
 
 # Everything runs from main() so a truncated `curl | bash` download cannot execute a partial script.
-main "$@"
+# MCP_HUB_INSTALL_SOURCE_ONLY=1 lets tests source the functions without installing anything.
+[[ -n "${MCP_HUB_INSTALL_SOURCE_ONLY:-}" ]] || main "$@"
