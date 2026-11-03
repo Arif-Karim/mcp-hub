@@ -40,7 +40,7 @@ reject() {
   rm -rf "$tmp/out"
   if scripts/dev-registry.sh "$@" >"$tmp/log" 2>&1; then
     die "accepted: $*"
-  elif ! grep -q "$want" "$tmp/log"; then
+  elif ! grep -q -e "$want" "$tmp/log"; then
     die "message for '$*' lacks '$want': $(cat "$tmp/log")"
   fi
   [[ ! -e "$tmp/out/catalogue.yaml" ]] || die "catalogue written for: $*"

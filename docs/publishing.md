@@ -155,25 +155,45 @@ change is installed, the daemon installs the new version when it restarts. Each 
 
 ## 5. Try it locally before the PR merges
 
-`scripts/dev-registry.sh` demonstrates the local-server flow end to end with
-the **reference** server. It builds `service-directory`, serves it on
-127.0.0.1:7421 and writes a fixed catalogue to `dist/dev/catalogue.yaml`:
+`scripts/dev-registry.sh` builds a dev catalogue at `dist/dev/catalogue.yaml`:
+the **built-in catalogue** plus your dev entries. A dev entry with an id that
+already exists replaces that listing. The catalogue is validated before the
+script finishes, so a bad entry fails fast. Local builds are packaged exactly
+like releases (a `.tar.gz` with one `mcp-server` at the root) and served on
+`127.0.0.1:${DEV_REGISTRY_PORT:-7421}`.
 
 ```sh
+# Your own server, built from the template in another directory (needs cmd/mcp-server):
+scripts/dev-registry.sh --src ~/scratch/leave-balance --id leave-balance [--version 0.0.0-dev]
+
+# A remote server (https only; repeatable; combines with --src):
+scripts/dev-registry.sh --remote cf-docs https://docs.mcp.cloudflare.com/mcp
+
+# No arguments: the reference service-directory server, overriding the real listing.
 scripts/dev-registry.sh
-MCP_HUB_CATALOGUE=dist/dev/catalogue.yaml ./bin/mcp-hub serve
 ```
 
-To try **your own** server:
+Local dev entries default to `name` = id, owner `local-dev`,
+`classification: internal`, `approval: approved`, `auth: hub-jwt`, no tools
+listed. Remote ones are `auth: none`, `classification: public`. Overriding an
+existing id keeps its name, tags and tools.
 
-1. Build your archive.
-2. Serve it on loopback (artifact URLs may use plain http only for
-   `127.0.0.1` or `localhost`).
-3. Write a catalogue file containing your entry.
-4. Point `MCP_HUB_CATALOGUE` at it. It **replaces** the built-in catalogue;
-   it doesn't merge with it.
+Then, in a second terminal:
 
-Then enable the server in the UI at http://127.0.0.1:7420, or ask Claude Code.
+```sh
+launchctl bootout gui/$(id -u)/com.mcp-hub.daemon      # if the LaunchAgent is running
+MCP_HUB_CATALOGUE=dist/dev/catalogue.yaml mcp-hub serve
+# ...when done, Ctrl-C and restore the normal hub:
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mcp-hub.daemon.plist
+```
+
+`MCP_HUB_CATALOGUE` **replaces** the built-in catalogue rather than merging
+with it. The dev catalogue contains a copy of the built-in one, so nothing
+disappears. Keep the registry terminal running while you enable a local
+server; installs are cached under `~/.mcp-hub/servers/<id>/<version>`, so bump
+`--version` to force a reinstall of a rebuilt server.
+
+Enable the server in the UI at http://127.0.0.1:7420, or ask Claude Code.
 Run `/reload-plugins` in Claude Code, or restart it, to load the new server.
 
 ## In production (not built here)
