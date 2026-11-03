@@ -19,14 +19,17 @@ Ask, and confirm before writing files:
 - **Catalogue id**: lowercase, matches `^[a-z0-9][a-z0-9-]{1,62}$`, e.g. `team-billing`. It is also the
   token audience (`HUB_AUDIENCE`), so pick it once.
 - **Go module path**, e.g. `github.com/<org>/<repo>` (ask; do not guess an org).
-- **Where the new server lives** (a new directory or repo of its own).
+- **Which repo**: the server lives in **your team's own repo** (a new one, or a directory in an existing team
+  repo), never inside the mcp-hub repo. Its release workflow lives there too; only the catalogue entry PR goes
+  to the hub repo later.
 - **The tools**: name, input, output, and which endpoint of their API each one calls.
 
 ## 2. Get the template
 
-- In an mcp-hub checkout (`examples/mcp-server-template` exists): copy that directory to the new location.
-- Otherwise: `git clone --depth 1 https://github.com/Arif-Karim/mcp-hub` into a temporary directory and copy
-  `examples/mcp-server-template` out of it. Do not keep the rest of the clone.
+- If an mcp-hub checkout is at hand (`examples/mcp-server-template` exists): copy that directory into the
+  team's repo.
+- Otherwise: `git clone --depth 1 https://github.com/Arif-Karim/mcp-hub` into a temporary directory, copy
+  `examples/mcp-server-template` into the team's repo, and delete the clone.
 
 Layout: `cmd/mcp-server` (entrypoint, SIGTERM), `cmd/devtoken` (local test issuer), `internal/app` (HTTP,
 `/mcp`, `/healthz`), `internal/config` (env), `internal/hubauth` (JWT verification), `internal/directory`
@@ -67,7 +70,8 @@ Do not remove or weaken these when editing:
 
 From the server directory:
 - `go test -race ./...`
-- the linter: `golangci-lint run ./...` (inside an mcp-hub checkout: `go tool -modfile=../../tools/go.mod golangci-lint run ./...`)
+- the linter: `golangci-lint run ./...` (the hub repo pins it in `tools/go.mod`; pin it in the team's repo the
+  same way, e.g. a `tools/go.mod` used with `go tool -modfile=tools/go.mod golangci-lint run ./...`)
 - `scripts/package.sh 0.1.0` builds `dist/` and prints the catalogue `artifacts:` snippet.
 
 ## 7. Try it locally

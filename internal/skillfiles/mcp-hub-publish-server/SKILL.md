@@ -14,12 +14,13 @@ Two kinds of entry:
 
 ## 1. Release workflow (local servers)
 
-The server needs its own git repo on GitHub (GitHub Releases stands in for the bank's artifact registry).
-Copy `.github/workflows/publish-mcp-server.yml` from the hub repo into it and change:
+The server, its release workflow, its tags and its releases all live in **your team's own repo** on GitHub
+(GitHub Releases stands in for the bank's artifact registry). The only change to the hub repo is the catalogue
+entry PR in step 4. Copy `.github/workflows/publish-mcp-server.yml` from the hub repo into the team's repo and change:
 - the tag prefix: `service-directory-v*` trigger, the `${REF_NAME#service-directory-v}` strip, `tag=` in the
   guard, and the `gh release create` tag;
-- the working directory (`examples/mcp-server-template`, also in `go-version-file`, `cache-dependency-path`
-  and the upload `path`);
+- the working directory (`examples/mcp-server-template` becomes the server's path in the team's repo, also in
+  `go-version-file`, `cache-dependency-path` and the upload `path`);
 - the `Version` file path in the guard step (`internal/directory/directory.go`);
 - the archive `name=` in `scripts/package.sh` (use the catalogue id);
 - the concurrency group (`publish-service-directory`);
@@ -29,6 +30,8 @@ repo; pin those tools in the new repo instead. Keep the two-job split (read-only
 access that runs no repo code) and the SHA-pinned actions. Show the user the diff before committing.
 
 ## 2. Release it
+
+All of this happens in the team's repo.
 
 1. Bump `Version` in the tools package and get it merged to `main`. The build fails if it does not match the tag.
 2. Tag the merge commit on `main` as `<id>-v<semver>` (e.g. `team-billing-v0.1.0`). **Ask the user before
