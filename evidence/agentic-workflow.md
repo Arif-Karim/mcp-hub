@@ -172,6 +172,8 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
 - This lane came from the human's hands-on testing, not the original plan. Two findings: after installing, Claude Code
   did not pick up the skill (nothing told the user it was missing or how to load it), and our "run `/mcp`" advice did
   not load newly enabled servers; `/reload-plugins` (or a restart) does. Every user-facing string now says that.
+  Follow-up (PR #25): `/reload-plugins` loads added servers but does not remove disabled ones, so disable now says
+  "restart Claude Code"; until then the hub refuses the disabled id, so stale tools fail closed.
 - The skill moved into the binary (`internal/skillfiles`, `go:embed`), so the skill always matches the daemon version and
   the release tarball is just the binary. `install.sh`, `mcp-hub install-skill` and the UI banner all write it the same
   way (temp file + rename). A test fails if a second copy reappears under `skill/`, so the copies cannot drift.

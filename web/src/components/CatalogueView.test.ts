@@ -60,6 +60,19 @@ describe('CatalogueView', () => {
     expect(card(w, 'deepwiki').get('[data-test=toggle]').text()).toBe('Enable')
   })
 
+  it('disable tells the user to restart Claude Code to remove the server', async () => {
+    const client = createMockClient({ latencyMs: 0 })
+    const enabled = await client.enable('deepwiki')
+    const w = mount(CatalogueView, { props: { client } })
+    await flushPromises()
+
+    await card(w, 'deepwiki').get('[data-test=toggle]').trigger('click')
+    await flushPromises()
+
+    expect(card(w, 'deepwiki').get('[data-test=toggle]').text()).toBe('Enable')
+    expect(toasts.map((t) => t.text)).toEqual([`${enabled.name} disabled — restart Claude Code to remove it`])
+  })
+
   it('filters by kind chip and enabled-only', async () => {
     const client = createMockClient({ latencyMs: 0 })
     await client.enable('deepwiki')
