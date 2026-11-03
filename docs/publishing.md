@@ -19,7 +19,10 @@ There are two kinds of entry:
 
 ## 1. Build it (local servers)
 
-Copy [`examples/mcp-server-template`](../examples/mcp-server-template). Its
+Your server lives in **your team's own repository**: copy
+[`examples/mcp-server-template`](../examples/mcp-server-template) into it, together
+with the publish workflow. Only the catalogue entry (step 3) comes to the hub
+repository. Its
 README is **the standard**:
 
 - streamable HTTP at `/mcp`
