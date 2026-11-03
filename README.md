@@ -48,9 +48,7 @@ the `hub__*` entries mcp-hub created (entries you edited are kept and listed). `
 make build && ./bin/mcp-hub serve         # UI + API + proxy on http://127.0.0.1:7420
 ```
 
-The default catalogue includes two public remote servers that need no setup: DeepWiki, and Context7 (which needs the
-proxy fix in PR #20). To try the
-**local** server flow (download → checksum → run → JWT verified by the server) without a release:
+The default catalogue includes two public remote servers that need no setup: DeepWiki and Context7. To try the **local** server flow (download → checksum → run → JWT verified by the server) without a release:
 
 ```sh
 scripts/dev-registry.sh                                        # terminal 1: builds the example server, serves it on 127.0.0.1:7421
@@ -61,8 +59,9 @@ CLI: `mcp-hub search [query]`, `info <id>`, `enable <id>`, `disable <id>`, `stat
 
 ## Try it without touching your setup
 
-Everything mcp-hub writes is behind three environment variables, so a sandbox leaves your real `~/.claude.json`,
-`~/.mcp-hub` and port 7420 alone:
+Everything mcp-hub writes is behind environment variables (`MCP_HUB_HOME`, `CLAUDE_CONFIG_PATH`, `MCP_HUB_ADDR`,
+plus `CLAUDE_HOME_DIR` for where `install-skill` puts skills and `MCP_HUB_CATALOGUE` for a catalogue file), so a
+sandbox leaves your real `~/.claude.json`, `~/.claude/skills`, `~/.mcp-hub` and port 7420 alone:
 
 ```sh
 tmp=$(mktemp -d)
@@ -152,15 +151,21 @@ More in [`evidence/verify.md`](evidence/verify.md#known-gaps) and [`evidence/des
 |---|---|
 | [intent](evidence/intent.md) | problem, users, assumptions, constraints, out of scope, success criteria |
 | [design](evidence/design.md) | architecture, data flow, identity tokens, security, path to production |
-| [decisions](evidence/decisions.md) | 8 numbered ADRs and what we did not build |
+| [decisions](evidence/decisions.md) | 8 numbered ADRs (incl. ADR 8: skills in the binary now, a plugin later) and §9, what we did not build |
 | [verify](evidence/verify.md) | checks, results, e2e, guarded failures, known gaps |
 | [operate](evidence/operate.md) | run, logs, failure modes, rollback, upgrades |
 | [agentic workflow](evidence/agentic-workflow.md) | how Claude Code agents built it, where the human intervened |
 | [publishing guide](docs/publishing.md) | how a team publishes its own MCP server to the hub |
+| [time log](evidence/time-log.md) | time spent per phase |
 
 ## Time spent and tools
 
-- **Time:** a 3-hour timeboxed build (tracked in Toggl), plus about 15 minutes of packaging.
+- **Time:** about 3 hours of build (tracked in Toggl), plus about 15 minutes of packaging. Pre-timebox planning
+  (scoping the idea down to one slice) is excluded. See [time log](evidence/time-log.md).
 - **Tools:** Claude Code with an orchestrator session and parallel builder and reviewer subagents, each in its own
   worktree (see [agentic workflow](evidence/agentic-workflow.md)). Go, Vue 3 + Vite + TypeScript, GitHub Actions
-  (CI, CodeQL, Dependabot, releases).
+  (CI, CodeQL, Dependabot, releases). Quality gates: golangci-lint (incl. gosec), `go test -race` with a coverage gate,
+  gremlins mutation testing, govulncheck, `npm audit`, gitleaks, CodeQL.
+- **History:** `main`'s first-parent history has 8 direct commits: 6 Phase 0 contract-first scaffold commits and 2
+  early CI fixes to the mutation gate, all before branch protection was switched on. Everything after went through a PR
+  with a merge commit (details in [agentic workflow](evidence/agentic-workflow.md)).
