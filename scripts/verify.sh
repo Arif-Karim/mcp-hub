@@ -58,6 +58,8 @@ go build -trimpath -o bin/mcp-hub ./cmd/mcp-hub
 bin/mcp-hub version
 if [[ -f examples/mcp-server-template/go.mod ]]; then
   (cd examples/mcp-server-template && go build -trimpath -o ../../bin/example-mcp-server ./cmd/mcp-server)
+  step "dev registry script test (dry run)"
+  scripts/tests/dev_registry_test.sh
 fi
 
 if [[ "${1:-}" == "--mutation" ]]; then
