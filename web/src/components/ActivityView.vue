@@ -51,7 +51,7 @@ const statusClass = (s: number) => (s >= 500 ? 'bad' : s >= 400 ? 'warn' : 'ok')
 <template>
   <section aria-labelledby="activity-heading">
     <div class="section-head">
-      <h2 id="activity-heading">Activity</h2>
+      <h2 id="activity-heading" tabindex="-1">Activity</h2>
       <span class="muted live"><span class="dot" aria-hidden="true"></span>Auto-refreshing every 5s</span>
     </div>
 

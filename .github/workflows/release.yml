@@ -103,9 +103,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
+          # vX.Y.Z-rc.1 etc. are pre-releases: keep them out of GitHub's "latest" (install.sh skips them too).
+          pre=()
+          if [[ "$VERSION" == *-* ]]; then pre=(--prerelease); fi
           gh release create "$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "mcp-hub $VERSION" \
             --generate-notes \
+            ${pre[@]+"${pre[@]}"} \
             dist/*.tar.gz dist/checksums.txt

@@ -121,4 +121,14 @@ describe('CatalogueView', () => {
     expect(w.text()).toContain('Use mcp-hub from Claude Code')
     expect(w.find('[data-test=skill-banner]').exists()).toBe(false)
   })
+
+  it('ends the grid with an invite card linking to /publish', async () => {
+    const w = mount(CatalogueView, { props: { client: createMockClient({ latencyMs: 0 }) } })
+    await flushPromises()
+    const cards = w.findAll('.grid > *')
+    const invite = cards[cards.length - 1]
+    expect(invite.attributes('data-test')).toBe('invite-card')
+    expect(invite.text()).toContain('Your service here')
+    expect(invite.get('a').attributes('href')).toBe('/publish')
+  })
 })

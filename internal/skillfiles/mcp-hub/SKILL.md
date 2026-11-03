@@ -1,6 +1,6 @@
 ---
 name: mcp-hub
-description: Find, enable and disable approved MCP servers from the company's governed mcp-hub catalogue. Use when the user asks to find, get, install, add or connect an MCP server or tool, wants to connect Claude to an internal system (service directory, Jira, payments, docs, ...), asks what MCP servers are available or which ones they have enabled, or wants to remove/disable one.
+description: Find, enable and disable approved MCP servers from the company's governed mcp-hub catalogue. Use when the user asks to find, get, install, add or connect an (existing, approved) MCP server or tool, wants to connect Claude to an internal system (service directory, Jira, payments, docs, ...), asks what MCP servers are available or which ones they have enabled, or wants to remove/disable one. To build or publish your own server, use mcp-hub-build-server or mcp-hub-publish-server instead.
 allowed-tools: Bash(mcp-hub search:*), Bash(mcp-hub info:*), Bash(mcp-hub status:*)
 ---
 
@@ -9,6 +9,9 @@ allowed-tools: Bash(mcp-hub search:*), Bash(mcp-hub info:*), Bash(mcp-hub status
 `mcp-hub` is the only approved way to add MCP servers here. It installs only catalogue entries that
 governance approved, verifies artifacts, injects short-lived credentials and audits every call.
 Never edit `~/.claude.json` or run `claude mcp add` yourself to work around it.
+
+To build your own MCP server, use the `mcp-hub-build-server` skill; to publish one to the catalogue, use the
+`mcp-hub-publish-server` skill.
 
 ## Find servers
 

@@ -212,7 +212,7 @@ Usage:
   mcp-hub disable <id> [--json]      stop and remove hub__<id> from Claude Code
   mcp-hub status [--json]            daemon status and enabled servers
   mcp-hub uninstall-config           remove every mcp-hub entry from Claude Code config (offline)
-  mcp-hub install-skill              install/update the Claude Code skill in ~/.claude/skills (offline)
+  mcp-hub install-skill              install/update the Claude Code skills in ~/.claude/skills (offline)
   mcp-hub version                    print the version
   mcp-hub help                       this help
 

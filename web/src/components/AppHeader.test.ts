@@ -45,3 +45,22 @@ describe('AppHeader status pill', () => {
     expect(pill.classes()).not.toContain('pill--bad')
   })
 })
+
+describe('AppHeader publish link', () => {
+  it('links to /publish and navigates client-side', async () => {
+    history.replaceState(null, '', '/')
+    const w = mount(AppHeader, { props: { health: 'ok', status, tab: 'catalogue' } })
+    const link = w.get('[data-test=publish-cta]')
+    expect(link.text()).toBe('Publish your server')
+    expect(link.attributes('href')).toBe('/publish')
+    expect(link.attributes('aria-current')).toBeUndefined()
+    await link.trigger('click')
+    expect(location.pathname).toBe('/publish')
+    history.replaceState(null, '', '/')
+  })
+
+  it('marks the link current on the publish page', () => {
+    const w = mount(AppHeader, { props: { health: 'ok', status, tab: 'publish' } })
+    expect(w.get('[data-test=publish-cta]').attributes('aria-current')).toBe('page')
+  })
+})
