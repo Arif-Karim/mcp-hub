@@ -132,7 +132,10 @@ beyond checksum, loopback and token audience.
 
 ## Known limitations
 
-- macOS only (no Windows/Linux installer).
+- macOS only (no Windows/Linux installer); Windows is deferred, see ADR 10 in `evidence/decisions.md`.
+- The builder and publisher skills (`mcp-hub-build-server`, `mcp-hub-publish-server`) ship in v0.1.1 but were cut
+  from end-to-end testing to fit the timebox. The supported path for teams is the guide,
+  [`docs/publishing.md`](docs/publishing.md); a skill-guided "talk to Claude to build and publish" flow is the next step.
 - After enable, Claude Code needs `/reload-plugins` (or a restart). After disable it needs a **restart**:
   `/reload-plugins` does not remove servers (the hub refuses the disabled id meanwhile, so stale tools fail closed).
   A gateway entry would remove both steps (ADR 4).
