@@ -15,17 +15,59 @@ describe('ActivityView', () => {
     w.unmount()
   })
 
-  it('renders events newest first', async () => {
+  it('shows only tool calls by default, newest first', async () => {
     const client = createMockClient({ latencyMs: 0 })
     await client.enable('service-directory')
     const w = mount(ActivityView, { props: { client } })
     await flushPromises()
     const rows = w.findAll('tbody tr')
-    expect(rows).toHaveLength(3)
+    expect(rows).toHaveLength(1)
     expect(rows[0].text()).toContain('tools/call')
     expect(rows[0].text()).toContain('find_service')
-    expect(rows[2].text()).toContain('initialize')
     expect(rows[0].text()).toContain('service-directory')
+    expect(w.text()).not.toContain('initialize')
+    w.unmount()
+  })
+
+  it('reveals connection activity with friendly labels when the toggle is on', async () => {
+    const client = createMockClient({ latencyMs: 0 })
+    await client.enable('service-directory')
+    const w = mount(ActivityView, { props: { client } })
+    await flushPromises()
+    const toggle = w.get('input[type=checkbox]')
+    expect(w.get(`label[for="${toggle.attributes('id')}"]`).text()).toBe(
+      'Show connection activity (handshake, listing, streams)',
+    )
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    await toggle.setValue(true)
+    const rows = w.findAll('tbody tr')
+    expect(rows).toHaveLength(3)
+    expect(rows[0].text()).toContain('find_service')
+    expect(rows[1].text()).toContain('Listed tools')
+    expect(rows[2].text()).toContain('Handshake')
+    expect(rows[2].text()).toContain('initialize')
+    await toggle.setValue(false)
+    expect(w.findAll('tbody tr')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('explains when there is only connection traffic and no tool calls yet', async () => {
+    const client = createMockClient({ latencyMs: 0 })
+    client.audit = () =>
+      Promise.resolve([
+        { time: new Date().toISOString(), server: 'deepwiki', method: 'GET', status: 405, durationMs: 3, user: 'u' },
+        { time: new Date().toISOString(), server: 'deepwiki', method: 'initialize', status: 200, durationMs: 3, user: 'u' },
+      ])
+    const w = mount(ActivityView, { props: { client } })
+    await flushPromises()
+    expect(w.find('table').exists()).toBe(false)
+    expect(w.text()).toContain('No tool calls in the last 2 events')
+    expect(w.text()).toContain('2 connection events hidden')
+    await w.get('input[type=checkbox]').setValue(true)
+    const rows = w.findAll('tbody tr')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text()).toContain('Event stream')
+    expect(rows[0].text()).toContain('405')
     w.unmount()
   })
 

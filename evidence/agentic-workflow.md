@@ -204,3 +204,16 @@ Claude Code (Opus 5.5) as orchestrator + builder/reviewer subagents. Human: revi
   already serves `index.html` for `/publish`). Tests were committed red then green, covering the header link, the 5 steps,
   `rel="noopener noreferrer"` on external links, Copy success, missing-clipboard and rejected-clipboard fallbacks via an
   `aria-live` status, the invite card, and the hint on pending entries only.
+
+### Lane K (Activity tab: tool calls vs connection traffic; DeepWiki GET 502)
+- Found in the human's hands-on testing: after `/mcp`, with no tools called, the Activity tab filled with what looked like
+  tool calls. They were Claude Code's connection handshake (`initialize`, `notifications/initialized`, `tools/list`,
+  `resources/list`, `prompts/list`, SSE `GET`). The tab now shows only `tools/call` by default, with a "Show connection
+  activity (handshake, listing, streams)" toggle and friendly labels ("Connected", "Listed tools", "Event stream"). The
+  audit file still records everything.
+- The same testing showed `deepwiki` `GET` as 502. `curl` showed DeepWiki answers the optional GET SSE stream with
+  `405 Method Not Allowed`, `text/plain` (allowed by the MCP spec), and our content-type guard turned it into 502. The
+  proxy now passes 405 through with the body dropped (same path as the untyped 202). Review and an assessor's bare
+  `curl -X POST` showed the same pattern for 404 (expired session, so the client must re-initialize) and go-sdk's 400/406
+  `text/plain`. Any upstream 4xx except 401/403 with an untyped body now keeps its status with the body dropped. The
+  content-type rule is unchanged for 2xx, 3xx and 5xx (table test, red → green in `security_test.go`).
