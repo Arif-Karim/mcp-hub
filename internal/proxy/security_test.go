@@ -124,6 +124,33 @@ func TestAcceptedUntypedBodyIsDropped(t *testing.T) {
 	}
 }
 
+// The MCP spec lets a server refuse the optional GET SSE stream with 405
+// (DeepWiki does, with a text/plain body). Pass the status through so the
+// client knows not to retry, but drop the untyped body.
+func TestMethodNotAllowedIsPassedThroughWithoutBody(t *testing.T) {
+	up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Allow", "DELETE, POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = io.WriteString(w, "<script>alert(1)</script>")
+	})
+	f := newFixture(t, resolver{"svc-a": {URL: up.URL, Auth: catalogue.AuthNone}}, nil)
+	rec := serve(f.h, req(http.MethodGet, "/mcp/svc-a", ""))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("body = %q, want empty", rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "" {
+		t.Errorf("content-type = %q, want none", ct)
+	}
+	assertSecurityHeaders(t, rec.Header())
+	if e := f.audit.only(t); e.Status != http.StatusMethodNotAllowed {
+		t.Errorf("audit = %+v", e)
+	}
+}
+
 func TestUpstreamAuthRejectionIsMappedTo502(t *testing.T) {
 	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		up, _ := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
