@@ -21,6 +21,16 @@
    A web UI · B catalogue + registry · C token, proxy, audit · D Claude config writer · E reference MCP server +
    publish pipeline · F2 CLI, skill, installer, release.
 4. **Thin vertical slice (F1).** Hub service, runner, daemon wiring and the e2e test that joins everything (PR #15).
+5. **Hands-on iteration.** The human used the slice in Claude Code. What they found became lanes G–M and fix PRs
+   (below), and the harness was hardened (#22).
+
+**Direct commits to main (lesson learned).** `main`'s first-parent history has 8 direct commits. Six are the Phase 0
+contract-first commits, made one after another before any lane started: scaffold + API contract, the server red and
+green commits, `verify.sh` + CI, `CLAUDE.md` + the evidence skeleton, and a small evidence tweak. The other two are early
+CI fixes to the mutation gate (timed-out mutants were passing it), pushed directly in the middle of Phase 1. Every
+other change (23+ PRs) merged through a PR with a merge commit. Branch protection, added later, now blocks direct
+pushes. It should have been switched on at the end of Phase 0, so the gate fix would have been reviewed like
+everything else.
 
 ## Pipeline per lane
 
@@ -45,8 +55,16 @@ builder (worktree) ── red → green commits ── verify.sh ── push onc
 | #15 | F1 hub service, runner, daemon, e2e | yes |
 | #17 | Catalogue: real service-directory v0.1.0 checksums | yes |
 | #18 | H evidence pack + README (this) | open |
-| #20 | Proxy: accept Context7's chunked 202 with no content type (found by human hands-on testing) | open at time of writing |
-| #21 | Publishing guide for MCP server authors | open at time of writing |
+| #19 | G skill embedded in the binary, Install-skill banner, `/reload-plugins` wording | yes |
+| #20 | Proxy: accept Context7's chunked 202 with no content type | yes |
+| #21 | Publishing guide for MCP server authors (`docs/publishing.md`) | yes |
+| #22 | Harness: hook-enforced agent rules, `pr-ready.sh` merge gate, PR template | yes |
+| #25 | Disable needs a Claude Code restart; servers live in team repos | yes |
+| #23 | I "publish your own MCP server" UI | open at time of writing |
+| #24 | J skills to build and publish MCP servers | open at time of writing |
+| #26 | Installer picks the newest `vX.Y.Z` release, not GitHub's "latest" | open at time of writing |
+| #27 | K Activity tab hides connection traffic; proxy passes upstream 405 through | open at time of writing |
+| #28 | M dev registry: try any local or remote server before publishing | open at time of writing |
 
 ## Representative steering prompts (excerpts)
 
@@ -67,7 +85,13 @@ builder (worktree) ── red → green commits ── verify.sh ── push onc
 | Corrected the token model | the hub JWT carries user identity (`sub`) so servers can call their own APIs on the user's behalf; see design.md |
 | Found Claude bypassing the hub with `claude mcp add` | skill wording, plus decisions.md ADR 3 (managed settings) |
 | Tested the slice by hand in Claude Code via the skill; confirmed `/reload-plugins` loads newly enabled servers | enabled remote DeepWiki and local service-directory, called tools; the server verified the hub token and the audit log showed `find_service` |
-| Hands-on test found `hub__context7` failing with `start_failed` | Context7 answers notifications with a chunked 202 and no content type, which the proxy's content-type guard blocked; fix in PR #20 (202 passed through with its body dropped) |
+| Hands-on: the skill was not picked up after install, and "run `/mcp`" did not load new servers | Lane G (#19): skill embedded in the binary, Install-skill banner in the UI, all wording changed to `/reload-plugins` |
+| Hands-on: `/reload-plugins` still listed disabled servers | #25: disable says "restart Claude Code"; the hub already refuses disabled ids, so stale tools fail closed |
+| Hands-on: Activity tab showed handshake/listing rows that looked like tool calls; DeepWiki `GET` showed 502 | #27 (Lane K): tool calls only by default with a "show connection activity" toggle; upstream 405 (DeepWiki refuses the optional SSE GET with `text/plain`) passed through with the body dropped |
+| Cutting v0.1.0: the default install failed because GitHub's "latest" release was the example server's | #26: installer picks the newest `vX.Y.Z` tag |
+| Product steer: the hub served consumers only; teams should be encouraged to publish | publishing guide (#21), Lane I publish UI (#23), Lane J build/publish skills (#24), Lane M dev registry (#28) |
+| Asked for the agent rules to be enforced, not just written down | #22 harness (see below) |
+| Hands-on test found `hub__context7` failing with `start_failed` | Context7 answers notifications with a chunked 202 and no content type, which the proxy's content-type guard blocked; fixed in PR #20 (202 passed through with its body dropped) |
 
 ## Notable reviewer catches
 
@@ -94,6 +118,20 @@ connection pattern, concurrency, and what a hostile counterpart could send back.
 - Coverage gate caught 26% on the first run (Phase 0) → gate scoped to `internal/...` and tests added.
 - Parallel lanes shared a scratchpad and overwrote each other's `verify.log` → lane-prefixed log names.
 
+## Harness (PR #22)
+
+`CLAUDE.md` rules were text that agents read. #22 made the important ones enforced:
+
+- **Hooks** (`.claude/settings.json`): a PreToolUse guard on Bash (`scripts/hooks/guard-bash.py`, parses each command
+  segment with `shlex`, fails closed) blocks builder agents from `gh pr merge`, force-pushing (except
+  `--force-with-lease` on their own branch), pushing to `main`, pushing tags, cutting releases and changing repo
+  settings. `.go` files are gofmt'd after every edit. A table test runs in `verify.sh`.
+- **Merge gate** `scripts/pr-ready.sh <n>`: CI green, 0 code-scanning alerts on the PR ref, 0 bot comments, and a
+  final "Review findings → fixes" comment posted after the last review.
+- **Branch protection** on `main`: requires verify, mutation and both CodeQL analyses; no force-push or deletion;
+  enforced for admins. This is the hard control; the hook guards against agent mistakes and is not a security boundary.
+- PR template with a TDD / verify / evidence checklist.
+
 ## Per-lane notes worth keeping
 
 - **B:** validation reports every problem at once (entry id + field) so a catalogue PR reviewer sees the whole list.
@@ -110,3 +148,9 @@ connection pattern, concurrency, and what a hostile counterpart could send back.
   server). Lesson from its review: a fake that exits for an unrelated reason makes a timeout test pass for the wrong
   reason, so assert the intermediate state (child alive before, gone after). Also caught: macOS `tar` added an
   AppleDouble `._mcp-server` to the dev archive, so it is now built with the example's `mktar`. The e2e first failed because redirecting `HOME` before `go build` moved the module cache into `t.TempDir()`.
+- **G:** the skill now lives in `internal/skillfiles` (`go:embed`), so it always matches the daemon version. A test fails
+  if a second copy reappears. Review of #19 caught that Claude Code reads `CLAUDE_CONFIG_DIR`, not our `CLAUDE_HOME_DIR`;
+  with it set, the banner would have said "installed" while Claude could not see the skill.
+- **I, J, K, M** (open at time of writing): publish UI; skills that build and publish a server from the template in the
+  team's own repo; Activity filtering + 405 pass-through; dev registry for any local or remote server. Each was built
+  test-first, with red → green commits named in its PR.

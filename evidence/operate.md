@@ -28,7 +28,8 @@ How a developer (and the platform team supporting them) runs, debugs, rolls back
 ## After enabling or disabling
 
 Claude Code reads MCP servers when it loads, so a newly enabled server's tools appear only after
-**`/reload-plugins`** (or restarting Claude Code). The same applies after a disable. A single gateway entry
+**`/reload-plugins`** (or restarting Claude Code). After a **disable**, restart Claude Code: `/reload-plugins` adds
+servers but does not remove them. Until then the hub refuses the disabled id, so stale tools fail closed. A single gateway entry
 would remove this step (decisions.md ADR 4).
 
 ## Config and secrets
@@ -56,7 +57,7 @@ would remove this step (decisions.md ADR 4).
 | `enable` → `registry_unavailable` / `start_failed` | network or registry outage, or the server crashed on start | retry. The `state.lastError` field (`mcp-hub info <id>`) has details |
 | Enabled, but Claude Code doesn't show the tools | Claude Code has not reloaded its MCP config | `/reload-plugins` (or restart Claude Code) |
 | `enable` → `start_failed` for a local server | the server crashed or never answered `/healthz` | read `~/.mcp-hub/logs/<id>.log` |
-| Tool calls fail after a revoke | the updated catalogue (new release or `MCP_HUB_CATALOGUE` file) revoked the entry; the daemon auto-disables it on its next start | `mcp-hub disable <id>` now, then `/reload-plugins` |
+| Tool calls fail after a revoke | the updated catalogue (new release or `MCP_HUB_CATALOGUE` file) revoked the entry; the daemon auto-disables it on its next start | `mcp-hub disable <id>` now, then restart Claude Code (`/reload-plugins` does not remove servers) |
 | Uninstall prints `Kept hub__x` | the user edited that entry | kept on purpose; remove it by hand if you no longer want it |
 
 ## Rollback

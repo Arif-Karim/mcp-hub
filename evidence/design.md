@@ -44,7 +44,7 @@ every call goes through one place that adds credentials and writes the audit log
 | `internal/audit` | append-only JSONL + in-memory ring for `GET /api/v1/audit` | never sees arguments or results |
 | `internal/server`, `internal/httpx` | root mux, Host/Origin guard, contract error codes | contract: `api/openapi.yaml` |
 | `internal/daemon` | builds the whole graph from `MCP_HUB_HOME`; used by `serve` **and** the e2e test | |
-| `internal/cli`, `skill/` | CLI over the API; Claude Code skill that drives the CLI | |
+| `internal/cli`, `internal/skillfiles` | CLI over the API; Claude Code skill (embedded in the binary, written by `install-skill`, `install.sh` or the UI banner) that drives the CLI | the skill always matches the daemon version |
 | `web/` | Vue 3 UI (catalogue, detail drawer, Activity tab), embedded in the binary | talks to `/api/v1` only |
 | `examples/mcp-server-template` | reference `service-directory` server + publish workflow | separate Go module |
 
@@ -155,7 +155,31 @@ service?"). The example server verifies the token against `HUB_JWKS_URL` and bin
 - **Bash installer** plus a per-user LaunchAgent; no sudo.
 - Contract-first: `api/openapi.yaml` is the source of truth for the UI types, CLI and server.
 
-## Production / cloud shape
+## Path to production: CI/CD → cloud (not built)
+
+Everything in this section is a proposal. None of it is built.
+
+```
+team repo PR ──▶ CI gates: verify.sh (lint, gosec, race tests, coverage, govulncheck, gitleaks), mutation, CodeQL
+            ──▶ merge to main (branch protection) ──▶ tag ──▶ build + sign artefact ──▶ Artifactory
+catalogue PR ─▶ same gates + platform/security approval ──▶ catalogue service: dev → test → prod (promotion with approvals)
+laptops ◀── MDM (Jamf) pushes the signed mcp-hub binary + managed Claude Code settings; daemons poll the catalogue service
+```
+
+1. **Pipeline.** Every PR runs the gates that exist today (verify, mutation, CodeQL, gitleaks, govulncheck). Release
+   tags build **signed, notarised** artefacts and publish them to **Artifactory** instead of GitHub Releases.
+2. **Hub binary on laptops.** Distributed by **MDM (Jamf)** running the same installer with `--version` pinned, plus a
+   **managed Claude Code settings** file that only allows MCP servers whose URL is the hub proxy (ADR 3).
+3. **Catalogue service.** The catalogue becomes a central service (a container on the bank's Kubernetes or ECS),
+   deployed by pipeline with **environment promotion dev → test → prod** and approval gates. Entries still change by
+   reviewed PR. Daemons poll it, so a revoke reaches every laptop without a release or restart.
+4. **Identity.** The bank's IdP (Entra ID or Okta) replaces the local dev issuer: token exchange of the developer's SSO
+   session for a per-server audience token. Servers verify against the IdP's JWKS (same code path as today).
+5. **Remote MCP servers.** Internal teams deploy them as containers behind the bank's API gateway, with the same
+   token audience model (`aud` = catalogue id) and the same proxy in front.
+6. **Audit.** Events ship to the SIEM instead of a local file.
+
+## Production / cloud shape (summary)
 
 | Here (take-home) | In the bank |
 |---|---|

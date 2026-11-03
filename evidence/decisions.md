@@ -45,12 +45,13 @@ permission prompt (a PR #14 review catch).
 ## 4. Per-server `hub__` entries now, a single gateway later
 
 **Context.** Claude Code reads MCP servers from config at load time, so after enabling a server the user must run
-`/reload-plugins` (or restart Claude Code) before its tools appear.
+`/reload-plugins` (or restart Claude Code) before its tools appear. Hands-on testing showed `/reload-plugins` adds
+servers but does not remove them, so after a disable the user must restart Claude Code (PR #25).
 
 **Decision.** One `hub__<id>` entry per enabled server, each pointing at `/mcp/<id>`. Simple, maps one-to-one to audit
 and token audience, and disable is a config delete.
 
-**Consequences.** The reload step stays. The fix is a single gateway MCP entry that aggregates tools from all enabled
+**Consequences.** The reload and restart steps stay. A disabled id is refused by the proxy, so stale tools fail closed. The fix is a single gateway MCP entry that aggregates tools from all enabled
 servers and sends `notifications/tools/list_changed` when one is enabled. Deferred: it means a tool-namespacing and
 session-multiplexing layer, too much for the timebox.
 
