@@ -110,6 +110,21 @@ prompts.
 | Real IdP / SSO | Local Ed25519 issuer with the same JWKS contract; see design.md "Identity tokens" |
 | Code signing / notarisation | sha256 against the catalogue only; production adds signed artifacts |
 | Devcontainers | Brief scoped to local macOS laptops |
-| Windows / Linux packaging | Release builds linux-amd64 but the installer and LaunchAgent are macOS only |
+| Windows / Linux packaging | ADR 10. Release builds linux-amd64 but the installer and LaunchAgent are macOS only |
 | Gateway MCP entry | ADR 4 |
 | Central catalogue service | Catalogue is embedded or a file; production shape in design.md |
+
+## 10. Windows support deferred
+
+**Context.** Engineers asked whether Windows laptops are covered. The Go code already compiles for Windows
+(`GOOS=windows go build ./...` passes on `main`), and the UI is the same embedded web app, so the core is portable.
+
+**Decision.** Do not ship Windows in the 3-hour timebox. Remaining work, about 1.5–2 hours with tests:
+`install.ps1` (install.sh is bash and macOS-only); autostart via Task Scheduler instead of the LaunchAgent;
+windows/amd64 and arm64 zips in `release.yml`; a Windows artifact and sha256 for every local catalogue server, built
+by the template's publish workflow; ACLs instead of `0600` for the token, audit log and `~/.claude.json` writes;
+Windows file locking (`lock_unix.go`) and process stop (`proc_unix.go`, no SIGTERM); `.exe` handling in the runner
+and unpack; a Windows CI runner.
+
+**Consequence.** macOS only today (README "Known limitations"). Windows is packaging and OS integration work, not a
+redesign.
