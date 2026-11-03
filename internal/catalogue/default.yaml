@@ -17,7 +17,7 @@ entries:
         description: Search services by name or tag.
       - name: get_runbook
         description: Return the runbook for a service.
-    docsUrl: https://github.com/Arif-Karim/mcp-hub/tree/main/examples/mcp-server-template
+    docsUrl: https://github.com/Arif-Karim/mcp-hub/blob/main/examples/mcp-server-template/README.md#tools
     artifacts:
       # From the service-directory-v0.1.0 release (checksums.txt), produced by
       # .github/workflows/publish-mcp-server.yml.

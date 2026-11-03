@@ -214,7 +214,7 @@ func disable(ctx context.Context, env Env, o opts) error {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "Disabled %s: removed %s from your Claude Code config.\n", it.Name, it.State.ConfigName)
-	fmt.Fprintln(env.Stdout, "Run /reload-plugins in Claude Code (or restart it) to unload the server.")
+	fmt.Fprintln(env.Stdout, "Restart Claude Code to remove it (/reload-plugins adds servers but does not remove them).")
 	return nil
 }
 
@@ -330,7 +330,11 @@ func installSkill(_ context.Context, env Env, _ opts) error {
 	if err := skillfiles.Install(dir); err != nil {
 		return fmt.Errorf("installing skill: %w", err)
 	}
-	fmt.Fprintf(env.Stdout, "Installed the mcp-hub Claude Code skill to %s.\n", skillfiles.Path(dir))
-	fmt.Fprintln(env.Stdout, "Restart Claude Code or run /reload-plugins to load it.")
+	skills := skillfiles.Skills()
+	fmt.Fprintf(env.Stdout, "Installed %d mcp-hub Claude Code skills to %s:\n", len(skills), skillfiles.SkillsDir(dir))
+	for _, s := range skills {
+		fmt.Fprintf(env.Stdout, "  %s  %s\n", s.Name, skillfiles.SkillPath(dir, s.Name))
+	}
+	fmt.Fprintln(env.Stdout, "Restart Claude Code or run /reload-plugins to load them.")
 	return nil
 }

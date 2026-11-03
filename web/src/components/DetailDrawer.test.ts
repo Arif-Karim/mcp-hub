@@ -35,6 +35,7 @@ describe('DetailDrawer', () => {
     expect(w.get('[data-test=config-name]').text()).toBe('hub__service-directory')
     expect(w.get('[data-test=proxy-url]').text()).toBe('http://127.0.0.1:7420/mcp/service-directory')
     expect(w.text()).toContain('Run /reload-plugins in Claude Code (or restart it) to load the new server.')
+    expect(w.text()).toContain('After disabling, restart Claude Code to remove it')
     expect(w.findAll('[data-test=copy]')).toHaveLength(2)
   })
 
